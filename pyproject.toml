@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=71"]
+
+[project]
+name = "ai4ts"
+description = "AI for Time Series"
+authors = [{ name = "Wenjie Du", email = "wenjay.du@gmail.com" }]
+dynamic = ["version", "readme", "dependencies", "optional-dependencies"]
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Healthcare Industry",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+keywords = [
+    "data science",
+    "data mining",
+    "neural networks",
+    "machine learning",
+    "deep learning",
+    "artificial intelligence",
+    "time-series analysis",
+    "time series",
+    "imputation",
+    "interpolation",
+    "classification",
+    "clustering",
+    "forecasting",
+    "partially observed",
+    "irregular sampled",
+    "partially-observed time series",
+    "incomplete time series",
+]
+
+[project.urls]
+Source = "https://github.com/WenjieDu/AI4TS"
+Homepage = "https://time-series.ai"
+
+[tool.setuptools.packages.find]
+exclude = [
+    "*template",
+    "*README.md",
+    "docs*",
+    "test*",
+    "requirements*",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "ai4ts.version.__version__" }
+readme = { file = "README.md", content-type = "text/markdown" }
+
+[tool.flake8]
+max-line-length = 120
+# why ignore E203? Refer to https://github.com/PyCQA/pycodestyle/issues/373
+extend-ignore = """
+    E203
+"""
+# ignore some errors that are not important in template files
+exclude = [
+    "*/template"
+]
