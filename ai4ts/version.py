@@ -1,11 +1,11 @@
 """
-
+Version information for AI4TS.
 """
 
-# Created by Wenjie Du <wenjay.du@gmail.com>
+# Created by Wenjie Du <wdu@time-series.ai>
+# License: Apache-2.0
 
-
-# PyPOTS version
+# AI4TS version
 #
 # PEP0440 compatible formatted version, see:
 # https://www.python.org/dev/peps/pep-0440/
@@ -21,4 +21,4 @@
 #
 # Dev branch marker is: 'X.Y.dev' or 'X.Y.devN' where N is an integer.
 # 'X.Y.dev0' is the canonical version of 'X.Y.dev'
-__version__ = "0.0.0"
+__version__ = "0.0.1"
