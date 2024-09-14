@@ -13,7 +13,7 @@ __all__ = [
     "__version__",
 ]
 
-if sys.stdout.encoding == "utf-8":
+if sys.stdout.encoding.lower() == "utf-8":
     # for Unix-like systems (macOS and Linux) that can decode chars like ═ and ╝
     logo = f"""\u001b[34m
 ████████╗██╗███╗   ███╗███████╗    ███████╗███████╗██████╗ ██╗███████╗███████╗    █████╗ ██╗
@@ -22,8 +22,7 @@ if sys.stdout.encoding == "utf-8":
    ██║   ██║██║╚██╔╝██║██╔══╝╚════╝╚════██║██╔══╝  ██╔══██╗██║██╔══╝  ╚════██║   ██╔══██║██║
    ██║   ██║██║ ╚═╝ ██║███████╗    ███████║███████╗██║  ██║██║███████╗███████║██╗██║  ██║██║
    ╚═╝   ╚═╝╚═╝     ╚═╝╚══════╝    ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝╚═╝  ╚═╝╚═╝
-v{0.1} - building AI for unified time-series analysis, https://time-series.ai
-\u001b[0m
+ai4ts v{__version__} - building AI for unified time-series analysis, https://time-series.ai \u001b[0m
 """
 else:
     # for Windows platform
@@ -33,8 +32,8 @@ else:
    ██    ██ ██ ████ ██ █████   █████ ███████ █████   ██████  ██ █████   ███████    ███████ ██
    ██    ██ ██  ██  ██ ██                 ██ ██      ██   ██ ██ ██           ██    ██   ██ ██
    ██    ██ ██      ██ ███████       ███████ ███████ ██   ██ ██ ███████ ███████ ██ ██   ██ ██   
-v{0.1} - building AI for unified time-series analysis, https://time-series.ai
-\u001b[0m
+ai4ts v{__version__} - building AI for unified time-series analysis, https://time-series.ai \u001b[0m
 """
+    logo = logo.encode("utf-8").decode(sys.stdout.encoding, errors="ignore")
 
-print(logo.encode("utf8").decode(sys.stdout.encoding, errors="ignore"))
+print(logo)
