@@ -46,6 +46,8 @@ class TimeSeriesAI:
 
         if response.status_code == 200:
             self.learning_session_id = response.json()["id"]
+        elif response.status_code == 401:
+            logger.error("‼️Unauthorized access. Please check your API key.")
         else:
             raise Exception(response.text)
 
