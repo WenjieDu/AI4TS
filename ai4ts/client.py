@@ -51,7 +51,7 @@ class TimeSeriesAI:
         elif response.status_code == 521:
             logger.error("🙇Server is not available. Please try again later.")
         else:
-            raise Exception(response.text)
+            logger.error(f"Response status code: {response.status_code}. Response body: {response.text}")
 
     def learn(self, data: str) -> None:
         """Feed the data into AI model and let it learn from the context.
