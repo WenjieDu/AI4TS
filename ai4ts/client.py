@@ -83,7 +83,13 @@ class TimeSeriesAI:
             The imputed data.
 
         """
-        pass
+        requests.post(
+            url=LEARNING_ENDPOINT,
+            headers={
+                "authorization": self.authorization,
+            },
+            files={"file": ("file.csv", open(data, "rb"), "text/csv")},
+        )
 
     def forecast(self, data):
         """Forecast the future values based on the learned AI model.
