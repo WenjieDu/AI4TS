@@ -31,12 +31,11 @@ def determine_api_key(api_key: str = None) -> str:
         api_key = os.getenv("TIMESERIESAI_API_KEY", None)
         if api_key is not None:
             logger.info("API key loaded from the environment variable")
-
-    # load the API key from the local config if still None
-    if api_key is None:
-        # api_key = load_api_key_from_local_config()
-        if api_key is not None:
-            logger.info("API key loaded from the local config")
+        else:
+            # load the API key from the local config if still None
+            # api_key = load_api_key_from_local_config()
+            if api_key is not None:
+                logger.info("API key loaded from the local config")
 
     # raise an error if the API key is not provided by all means
     if api_key is None:
