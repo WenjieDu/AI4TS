@@ -9,6 +9,8 @@ Utility functions for the ai4ts package.
 import logging
 import os
 
+import requests
+
 LEVELS = {
     "debug": logging.DEBUG,
     "info": logging.INFO,
@@ -48,6 +50,20 @@ def determine_api_key(api_key: str = None) -> str:
         raise ValueError("API key is required to access TimeSeriesAI APIs")
 
     return api_key
+
+
+def check_response_code(response: requests.Response, success_print: str) -> None:
+    if response.status_code == 200:
+        logger.info(success_print)
+    elif response.status_code == 401:
+        logger.error("‼️Unauthorized access. Please check your API key.")
+    elif response.status_code == 415:
+        logger.error(f"❌{response.json()['detail']}")
+    elif response.status_code == 521:
+        logger.error("🙇Server is not available. Please try again later.")
+    else:
+        logger.error(f"Response status code: {response.status_code}. Response body: {response.text}")
+
 
 class Logger:
     def __init__(
