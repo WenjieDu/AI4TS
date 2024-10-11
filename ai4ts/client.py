@@ -5,7 +5,7 @@ The client module for interacting with the Time Series AI API.
 # Created by Wenjie Du <wdu@time-series.ai>
 # License: Apache-2.0
 
-import logging
+import os
 import time
 
 import numpy as np
@@ -15,9 +15,7 @@ from .config import (
     LEARNING_SESSION_INIT_ENDPOINT,
     LEARNING_ENDPOINT,
 )
-from .utils import determine_api_key
-
-logger: logging.Logger = logging.getLogger(__name__)
+from .utils import determine_api_key, check_response_code
 
 
 class TimeSeriesAI:
@@ -44,14 +42,11 @@ class TimeSeriesAI:
             json=LEARNING_SESSION,
         )
 
-        if response.status_code == 200:
-            self.learning_session_id = response.json()["id"]
-        elif response.status_code == 401:
-            logger.error("‼️Unauthorized access. Please check your API key.")
-        elif response.status_code == 521:
-            logger.error("🙇Server is not available. Please try again later.")
-        else:
-            logger.error(f"Response status code: {response.status_code}. Response body: {response.text}")
+        self.learning_session_id = response.json()["id"] if response.status_code == 200 else None
+        check_response_code(
+            response,
+            success_print=f"Learning session initialized successfully. Session ID: {self.learning_session_id}",
+        )
 
     def learn(self, data: str) -> None:
         """Feed the data into AI model and let it learn from the context.
@@ -63,13 +58,15 @@ class TimeSeriesAI:
         None
 
         """
-        requests.post(
+        response = requests.post(
             url=LEARNING_ENDPOINT,
             headers={
                 "authorization": self.authorization,
             },
-            files={"file": ("file.csv", open(data, "rb"), "text/csv")},
+            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
         )
+
+        check_response_code(response, success_print="Data file received successfully.")
 
     def impute(self, data):
         """Impute the missing values in the data based on the learned AI model.
@@ -83,13 +80,14 @@ class TimeSeriesAI:
             The imputed data.
 
         """
-        requests.post(
+        response = requests.post(
             url=LEARNING_ENDPOINT,
             headers={
                 "authorization": self.authorization,
             },
-            files={"file": ("file.csv", open(data, "rb"), "text/csv")},
+            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
         )
+        check_response_code(response, success_print="Data file received successfully.")
 
     def forecast(self, data):
         """Forecast the future values based on the learned AI model.

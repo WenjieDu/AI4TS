@@ -44,11 +44,12 @@ def determine_api_key(api_key: str = None) -> str:
             # api_key = load_api_key_from_local_config()
             if api_key is not None:
                 logger.info("API key loaded from the local config")
-
     # raise an error if the API key is not provided by all means
     if api_key is None:
-        raise ValueError("API key is required to access TimeSeriesAI APIs")
-
+        raise ValueError(
+            "‼️API key is required to access TimeSeriesAI APIs, "
+            "please pass it by the argument `api_key` or the environment variable `TIMESERIESAI_API_KEY`"
+        )
     return api_key
 
 
