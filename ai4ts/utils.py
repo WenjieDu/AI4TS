@@ -54,6 +54,22 @@ def determine_api_key(api_key: str = None) -> str:
 
 
 def check_response_code(response: requests.Response, success_print: str) -> None:
+    """Check the response status code and print the corresponding message.
+
+    Parameters
+    ----------
+    response:
+        The response object from the API request.
+
+    success_print:
+        The success message to be printed if the response status code is 200.
+
+    Returns
+    -------
+    None
+
+    """
+
     if response.status_code == 200:
         logger.info(success_print)
     elif response.status_code == 401:
