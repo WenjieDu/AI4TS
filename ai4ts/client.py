@@ -12,13 +12,23 @@ import numpy as np
 import requests
 
 from .config import (
-    LEARNING_SESSION_INIT_ENDPOINT,
     LEARNING_ENDPOINT,
+    LEARNING_SESSION_INIT_ENDPOINT,
 )
 from .utils import determine_api_key, check_response_code
 
 
 class TimeSeriesAI:
+    """The client for interacting with the Time Series AI API.
+
+    Parameters
+    ----------
+    api_key:
+        The API key to access the Time Series AI API.
+        If not provided, the function will try to load the API key from the environment variable or the local config
+
+    """
+
     def __init__(
         self,
         api_key: str = None,
