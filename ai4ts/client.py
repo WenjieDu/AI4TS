@@ -35,6 +35,7 @@ class TimeSeriesAI:
     ):
         self.api_key = determine_api_key(api_key)
         self.authorization = f"Bearer {api_key}"
+        self.http_session = requests.session()
         self.learning_session_id = None
 
         LEARNING_SESSION = {
@@ -43,7 +44,7 @@ class TimeSeriesAI:
                 "timestamp": time.time(),
             }
         }
-        response = requests.post(
+        response = self.http_session.post(
             url=LEARNING_SESSION_INIT_ENDPOINT,
             headers={
                 "authorization": self.authorization,
@@ -68,7 +69,8 @@ class TimeSeriesAI:
         None
 
         """
-        response = requests.post(
+        # post data to the server
+        response = self.http_session.post(
             url=LEARNING_ENDPOINT,
             headers={
                 "authorization": self.authorization,
@@ -76,7 +78,10 @@ class TimeSeriesAI:
             files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
         )
 
-        check_response_code(response, success_print="Data file received successfully.")
+        check_response_code(
+            response,
+            success_print="Data file received successfully.",
+        )
 
     def impute(self, data):
         """Impute the missing values in the data based on the learned AI model.
@@ -90,14 +95,19 @@ class TimeSeriesAI:
             The imputed data.
 
         """
-        response = requests.post(
+        # post data to the server
+        response = self.http_session.post(
             url=LEARNING_ENDPOINT,
             headers={
                 "authorization": self.authorization,
             },
             files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
         )
-        check_response_code(response, success_print="Data file received successfully.")
+
+        check_response_code(
+            response,
+            success_print="Data file received successfully.",
+        )
 
     def forecast(self, data):
         """Forecast the future values based on the learned AI model.
