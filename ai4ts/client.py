@@ -38,6 +38,7 @@ class TimeSeriesAI:
         self.http_session = requests.session()
         self.learning_session_id = None
 
+        # initialize the learning session
         LEARNING_SESSION = {
             "chat": {
                 "models": ["Gungnir"],
@@ -67,16 +68,16 @@ class TimeSeriesAI:
 
         """
         # post data to the server
-        response = self.http_session.post(
+
+        with self.http_session.post(
             url=LEARNING_ENDPOINT,
             headers={
                 "authorization": self.authorization,
             },
             files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
             stream=True,
-        )
-
-        check_response_code(response)
+        ) as response:
+            return check_response_code(response)
 
     def impute(self, data):
         """Impute the missing values in the data based on the learned AI model.
