@@ -35,15 +35,17 @@ class TimeSeriesAI:
     ):
         self.api_key = determine_api_key(api_key)
         self.authorization = f"Bearer {api_key}"
+        self.http_session = requests.session()
         self.learning_session_id = None
 
+        # initialize the learning session
         LEARNING_SESSION = {
             "chat": {
                 "models": ["Gungnir"],
                 "timestamp": time.time(),
             }
         }
-        response = requests.post(
+        response = self.http_session.post(
             url=LEARNING_SESSION_INIT_ENDPOINT,
             headers={
                 "authorization": self.authorization,
@@ -52,11 +54,8 @@ class TimeSeriesAI:
             json=LEARNING_SESSION,
         )
 
-        self.learning_session_id = response.json()["id"] if response.status_code == 200 else None
-        check_response_code(
-            response,
-            success_print=f"Learning session initialized successfully. Session ID: {self.learning_session_id}",
-        )
+        self.learning_session_id = response.text.split("Session ID: ")[-1] if response.status_code == 200 else None
+        check_response_code(response)
 
     def learn(self, data: str) -> None:
         """Feed the data into AI model and let it learn from the context.
@@ -68,15 +67,17 @@ class TimeSeriesAI:
         None
 
         """
-        response = requests.post(
+        # post data to the server
+
+        with self.http_session.post(
             url=LEARNING_ENDPOINT,
             headers={
                 "authorization": self.authorization,
             },
             files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
-        )
-
-        check_response_code(response, success_print="Data file received successfully.")
+            stream=True,
+        ) as response:
+            return check_response_code(response)
 
     def impute(self, data):
         """Impute the missing values in the data based on the learned AI model.
@@ -90,14 +91,17 @@ class TimeSeriesAI:
             The imputed data.
 
         """
-        response = requests.post(
+        # post data to the server
+        response = self.http_session.post(
             url=LEARNING_ENDPOINT,
             headers={
                 "authorization": self.authorization,
             },
             files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
+            stream=True,
         )
-        check_response_code(response, success_print="Data file received successfully.")
+
+        check_response_code(response)
 
     def forecast(self, data):
         """Forecast the future values based on the learned AI model.
