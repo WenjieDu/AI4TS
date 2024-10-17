@@ -5,9 +5,11 @@ Utility functions for the ai4ts package.
 # Created by Wenjie Du <wdu@time-series.ai>
 # License: Apache-2.0
 
-
+import json
 import logging
 import os
+import sys
+from typing import Optional
 
 import requests
 
@@ -17,6 +19,10 @@ LEVELS = {
     "warning": logging.WARNING,
     "error": logging.ERROR,
 }
+
+TEXT_RESP_BEG = "TEXT:"
+JSON_RESP_BEG = "JSON:"
+RESP_BEG_LEN = len(TEXT_RESP_BEG)
 
 
 def determine_api_key(api_key: str = None) -> str:
@@ -53,7 +59,7 @@ def determine_api_key(api_key: str = None) -> str:
     return api_key
 
 
-def check_response_code(response: requests.Response) -> None:
+def check_response_code(response: requests.Response) -> Optional[json]:
     """Check the response status code and print the corresponding message.
 
     Parameters
@@ -66,13 +72,24 @@ def check_response_code(response: requests.Response) -> None:
     None
 
     """
-
     if response.status_code == 200:
         # print the response content line by line for streaming response
-        for chunk in response.iter_lines():
+        buffer = ""
+        for chunk in response.iter_content(chunk_size=1024):
             if chunk:
-                decoded_chunk = chunk.decode("utf-8")
-                logger.info(decoded_chunk)
+                buffer += chunk.decode("utf-8")
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+
+                    if not line:
+                        continue
+
+                    if line.startswith(TEXT_RESP_BEG):
+                        sys.stdout.write("\b")
+                        logger.info(line[RESP_BEG_LEN:])
+                    elif line.startswith(JSON_RESP_BEG):
+                        return json.loads(line[RESP_BEG_LEN:])
 
     elif response.status_code == 401:
         # unauthorized access
