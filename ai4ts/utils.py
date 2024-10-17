@@ -53,16 +53,13 @@ def determine_api_key(api_key: str = None) -> str:
     return api_key
 
 
-def check_response_code(response: requests.Response, success_print: str) -> None:
+def check_response_code(response: requests.Response) -> None:
     """Check the response status code and print the corresponding message.
 
     Parameters
     ----------
     response:
         The response object from the API request.
-
-    success_print:
-        The success message to be printed if the response status code is 200.
 
     Returns
     -------
@@ -71,13 +68,24 @@ def check_response_code(response: requests.Response, success_print: str) -> None
     """
 
     if response.status_code == 200:
-        logger.info(success_print)
+        # print the response content line by line for streaming response
+        for chunk in response.iter_lines():
+            if chunk:
+                decoded_chunk = chunk.decode("utf-8")
+                logger.info(decoded_chunk)
+
     elif response.status_code == 401:
+        # unauthorized access
         logger.error("‼️Unauthorized access. Please check your API key.")
+
     elif response.status_code == 415:
+        # unsupported media type
         logger.error(f"❌{response.json()['detail']}")
+
     elif response.status_code == 521:
-        logger.error("🙇Server is not available. Please try again later.")
+        # server is down
+        logger.error("🙇Server is not available now. Please try again later.")
+
     else:
         logger.error(f"Response status code: {response.status_code}. Response body: {response.text}")
 

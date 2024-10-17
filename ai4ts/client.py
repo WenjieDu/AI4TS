@@ -53,11 +53,8 @@ class TimeSeriesAI:
             json=LEARNING_SESSION,
         )
 
-        self.learning_session_id = response.json()["id"] if response.status_code == 200 else None
-        check_response_code(
-            response,
-            success_print=f"Learning session initialized successfully. Session ID: {self.learning_session_id}",
-        )
+        self.learning_session_id = response.text.split("Session ID: ")[-1] if response.status_code == 200 else None
+        check_response_code(response)
 
     def learn(self, data: str) -> None:
         """Feed the data into AI model and let it learn from the context.
@@ -76,12 +73,10 @@ class TimeSeriesAI:
                 "authorization": self.authorization,
             },
             files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
+            stream=True,
         )
 
-        check_response_code(
-            response,
-            success_print="Data file received successfully.",
-        )
+        check_response_code(response)
 
     def impute(self, data):
         """Impute the missing values in the data based on the learned AI model.
@@ -102,12 +97,10 @@ class TimeSeriesAI:
                 "authorization": self.authorization,
             },
             files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
+            stream=True,
         )
 
-        check_response_code(
-            response,
-            success_print="Data file received successfully.",
-        )
+        check_response_code(response)
 
     def forecast(self, data):
         """Forecast the future values based on the learned AI model.
