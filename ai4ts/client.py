@@ -21,6 +21,7 @@ from .config import (
     ANOMALY_DETECTION_ENDPOINT,
 )
 from .utils import determine_api_key, check_response_code
+from .utils.file import check_file_size
 
 
 class TimeSeriesAI:
@@ -73,16 +74,18 @@ class TimeSeriesAI:
         None
 
         """
-        # post data to the server
-        with self.http_session.post(
-            url=LEARNING_ENDPOINT,
-            headers={
-                "authorization": self.authorization,
-            },
-            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
-            stream=True,
-        ) as response:
-            return check_response_code(response)
+        if check_file_size(data, self.max_file_size_in_mb):
+            # post data to the server
+            with self.http_session.post(
+                url=LEARNING_ENDPOINT,
+                headers={
+                    "authorization": self.authorization,
+                    "chat_session_id": self.chat_session_id,
+                },
+                files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
+                stream=True,
+            ) as response:
+                check_response_code(response)
 
     def impute(self, data):
         """Impute the missing values in the data based on the learned AI model.
