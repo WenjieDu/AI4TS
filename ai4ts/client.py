@@ -41,26 +41,27 @@ class TimeSeriesAI:
         self.api_key = determine_api_key(api_key)
         self.authorization = f"Bearer {api_key}"
         self.http_session = requests.session()
-        self.learning_session_id = None
 
-        # initialize the learning session
-        LEARNING_SESSION = {
+        # initialize the chat session
+        CHAT_SESSION = {
             "chat": {
                 "models": ["Gungnir"],
                 "timestamp": time.time(),
             }
         }
-        response = self.http_session.post(
+        with self.http_session.post(
             url=INIT_ENDPOINT,
             headers={
                 "authorization": self.authorization,
                 "Accept": "application/json",
             },
-            json=LEARNING_SESSION,
-        )
+            json=CHAT_SESSION,
+            stream=True,
+        ) as response:
+            result = check_response_code(response)
 
-        self.learning_session_id = response.text.split("Session ID: ")[-1] if response.status_code == 200 else None
-        check_response_code(response)
+        self.chat_session_id = result["chat_session_id"] if response.status_code == 200 else None
+        self.max_file_size_in_mb = result["max_file_size_in_mb"] if response.status_code == 200 else None
 
     def learn(self, data: str) -> None:
         """Feed the data into AI model and let it learn from the context.
