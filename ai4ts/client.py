@@ -13,7 +13,12 @@ import requests
 
 from .config import (
     LEARNING_ENDPOINT,
-    LEARNING_SESSION_INIT_ENDPOINT,
+    INIT_ENDPOINT,
+    IMPUTATION_ENDPOINT,
+    FORECASTING_ENDPOINT,
+    CLASSIFICATION_ENDPOINT,
+    CLUSTERING_ENDPOINT,
+    ANOMALY_DETECTION_ENDPOINT,
 )
 from .utils import determine_api_key, check_response_code
 
@@ -46,7 +51,7 @@ class TimeSeriesAI:
             }
         }
         response = self.http_session.post(
-            url=LEARNING_SESSION_INIT_ENDPOINT,
+            url=INIT_ENDPOINT,
             headers={
                 "authorization": self.authorization,
                 "Accept": "application/json",
@@ -68,7 +73,6 @@ class TimeSeriesAI:
 
         """
         # post data to the server
-
         with self.http_session.post(
             url=LEARNING_ENDPOINT,
             headers={
@@ -92,16 +96,15 @@ class TimeSeriesAI:
 
         """
         # post data to the server
-        response = self.http_session.post(
-            url=LEARNING_ENDPOINT,
+        with self.http_session.post(
+            url=IMPUTATION_ENDPOINT,
             headers={
                 "authorization": self.authorization,
             },
             files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
             stream=True,
-        )
-
-        check_response_code(response)
+        ) as response:
+            return check_response_code(response)
 
     def forecast(self, data):
         """Forecast the future values based on the learned AI model.
@@ -117,7 +120,16 @@ class TimeSeriesAI:
             The forecasting result.
 
         """
-        pass
+        # post data to the server
+        with self.http_session.post(
+            url=FORECASTING_ENDPOINT,
+            headers={
+                "authorization": self.authorization,
+            },
+            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
+            stream=True,
+        ) as response:
+            return check_response_code(response)
 
     def classify(self, data):
         """Classify the data based on the learned AI model.
@@ -133,7 +145,16 @@ class TimeSeriesAI:
             The classification result.
 
         """
-        pass
+        # post data to the server
+        with self.http_session.post(
+            url=CLASSIFICATION_ENDPOINT,
+            headers={
+                "authorization": self.authorization,
+            },
+            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
+            stream=True,
+        ) as response:
+            return check_response_code(response)
 
     def detect(self, data):
         """Detect the anomalies in the data based on the learned AI model
@@ -144,7 +165,16 @@ class TimeSeriesAI:
             The anomaly detection result.
 
         """
-        pass
+        # post data to the server
+        with self.http_session.post(
+            url=ANOMALY_DETECTION_ENDPOINT,
+            headers={
+                "authorization": self.authorization,
+            },
+            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
+            stream=True,
+        ) as response:
+            return check_response_code(response)
 
     def cluster(self, data):
         """Cluster the data based on the learned AI model.
@@ -160,7 +190,16 @@ class TimeSeriesAI:
             The clustering result.
 
         """
-        pass
+        # post data to the server
+        with self.http_session.post(
+            url=CLUSTERING_ENDPOINT,
+            headers={
+                "authorization": self.authorization,
+            },
+            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
+            stream=True,
+        ) as response:
+            return check_response_code(response)
 
     def generate(self) -> np.ndarray:
         """Generate synthetic data based on the learned AI model.

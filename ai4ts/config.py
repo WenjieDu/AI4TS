@@ -7,12 +7,17 @@ Configurations for the ai4ts package.
 
 import os
 
+# beginnings of text and json content in the server response
+TEXT_RESP_BEG = "TEXT:"
+JSON_RESP_BEG = "JSON:"
+RESP_BEG_LEN = len(TEXT_RESP_BEG)
+
 BASE_URL = os.getenv(
     "TIMESERIESAI_BASE_URL",
     "https://api.time-series.ai",
 )
 
-LEARNING_SESSION_INIT_ENDPOINT = f"{BASE_URL}/api/v1/chats/new"
+INIT_ENDPOINT = f"{BASE_URL}/timeseriesai/api/init_chat"
 LEARNING_ENDPOINT = f"{BASE_URL}/timeseriesai/api/learn"
 IMPUTATION_ENDPOINT = f"{BASE_URL}/timeseriesai/api/impute"
 FORECASTING_ENDPOINT = f"{BASE_URL}/timeseriesai/api/forecast"
