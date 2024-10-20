@@ -14,10 +14,7 @@ from typing import Optional
 import requests
 
 from .logging import logger
-
-TEXT_RESP_BEG = "TEXT:"
-JSON_RESP_BEG = "JSON:"
-RESP_BEG_LEN = len(TEXT_RESP_BEG)
+from ..config import JSON_RESP_BEG, RESP_BEG_LEN, TEXT_RESP_BEG
 
 
 class SpinningCursor(threading.Thread):
