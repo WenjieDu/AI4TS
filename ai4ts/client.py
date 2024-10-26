@@ -12,8 +12,8 @@ import numpy as np
 import requests
 
 from .config import (
-    LEARNING_ENDPOINT,
     INIT_ENDPOINT,
+    LEARNING_ENDPOINT,
     IMPUTATION_ENDPOINT,
     FORECASTING_ENDPOINT,
     CLASSIFICATION_ENDPOINT,
@@ -48,7 +48,7 @@ class TimeSeriesAI:
         self.http_session = requests.session()
 
         # initialize the chat session
-        CHAT_SESSION = {
+        session_config = {
             "chat": {
                 "models": ["Gungnir"],
                 "timestamp": time.time(),
@@ -60,7 +60,7 @@ class TimeSeriesAI:
                 "authorization": self.authorization,
                 "Accept": "application/json",
             },
-            json=CHAT_SESSION,
+            json=session_config,
             stream=True,
         ) as response:
             result = check_response_code(response)

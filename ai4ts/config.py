@@ -14,9 +14,10 @@ RESP_BEG_LEN = len(TEXT_RESP_BEG)
 
 BASE_URL = os.getenv(
     "TIMESERIESAI_BASE_URL",
-    "https://api.time-series.ai",
+    "https://dashboard.time-series.ai",
 )
 
+# API endpoints for different functionalities
 INIT_ENDPOINT = f"{BASE_URL}/timeseriesai/api/init_chat"
 LEARNING_ENDPOINT = f"{BASE_URL}/timeseriesai/api/learn"
 IMPUTATION_ENDPOINT = f"{BASE_URL}/timeseriesai/api/impute"
