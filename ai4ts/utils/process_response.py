@@ -9,7 +9,6 @@ import json
 import sys
 import threading
 import time
-from typing import Optional
 
 import requests
 
@@ -37,7 +36,7 @@ class SpinningCursor(threading.Thread):
         self.join()
 
 
-def check_response_code(response: requests.Response) -> Optional[json]:
+def check_response_code(response: requests.Response):
     """Check the response status code and print the corresponding message.
 
     Parameters
@@ -47,7 +46,8 @@ def check_response_code(response: requests.Response) -> Optional[json]:
 
     Returns
     -------
-    None
+    dict
+        The JSON response content if the response status
 
     """
     spinning_cursor = SpinningCursor()
@@ -86,5 +86,6 @@ def check_response_code(response: requests.Response) -> Optional[json]:
 
         else:
             logger.error(f"Response status code: {response.status_code}. Response body: {response.text}")
+
     finally:
         spinning_cursor.stop()
