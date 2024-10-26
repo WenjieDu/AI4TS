@@ -19,9 +19,13 @@ from .config import (
     CLASSIFICATION_ENDPOINT,
     CLUSTERING_ENDPOINT,
     ANOMALY_DETECTION_ENDPOINT,
+    CLEAN_ENDPOINT,
 )
-from .utils import determine_api_key, check_response_code
-from .utils.file import check_file_size
+from .utils import (
+    determine_api_key,
+    check_response_code,
+    check_file_size,
+)
 
 
 class TimeSeriesAI:
@@ -64,6 +68,30 @@ class TimeSeriesAI:
         self.chat_session_id = result["chat_session_id"] if response.status_code == 200 else None
         self.max_file_size_in_mb = result["max_file_size_in_mb"] if response.status_code == 200 else None
 
+    def _post_data(
+        self,
+        endpoint: str,
+        data: str,
+    ):
+        result = None
+
+        if check_file_size(data, self.max_file_size_in_mb):  # check the file size
+            # post data to the server
+            with self.http_session.post(
+                url=endpoint,
+                headers={
+                    "authorization": self.authorization,
+                    "chat_session_id": self.chat_session_id,
+                },
+                files={
+                    "file": (os.path.basename(data), open(data, "rb"), "text/csv"),
+                },
+                stream=True,
+            ) as response:
+                result = check_response_code(response)
+
+        return result
+
     def learn(self, data: str) -> None:
         """Feed the data into AI model and let it learn from the context.
         This operation can be repeated multiple times to improve the performance,
@@ -74,18 +102,7 @@ class TimeSeriesAI:
         None
 
         """
-        if check_file_size(data, self.max_file_size_in_mb):
-            # post data to the server
-            with self.http_session.post(
-                url=LEARNING_ENDPOINT,
-                headers={
-                    "authorization": self.authorization,
-                    "chat_session_id": self.chat_session_id,
-                },
-                files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
-                stream=True,
-            ) as response:
-                check_response_code(response)
+        return self._post_data(LEARNING_ENDPOINT, data)
 
     def impute(self, data):
         """Impute the missing values in the data based on the learned AI model.
@@ -99,16 +116,7 @@ class TimeSeriesAI:
             The imputed data.
 
         """
-        # post data to the server
-        with self.http_session.post(
-            url=IMPUTATION_ENDPOINT,
-            headers={
-                "authorization": self.authorization,
-            },
-            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
-            stream=True,
-        ) as response:
-            return check_response_code(response)
+        return self._post_data(IMPUTATION_ENDPOINT, data)
 
     def forecast(self, data):
         """Forecast the future values based on the learned AI model.
@@ -124,16 +132,7 @@ class TimeSeriesAI:
             The forecasting result.
 
         """
-        # post data to the server
-        with self.http_session.post(
-            url=FORECASTING_ENDPOINT,
-            headers={
-                "authorization": self.authorization,
-            },
-            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
-            stream=True,
-        ) as response:
-            return check_response_code(response)
+        return self._post_data(FORECASTING_ENDPOINT, data)
 
     def classify(self, data):
         """Classify the data based on the learned AI model.
@@ -149,16 +148,7 @@ class TimeSeriesAI:
             The classification result.
 
         """
-        # post data to the server
-        with self.http_session.post(
-            url=CLASSIFICATION_ENDPOINT,
-            headers={
-                "authorization": self.authorization,
-            },
-            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
-            stream=True,
-        ) as response:
-            return check_response_code(response)
+        return self._post_data(CLASSIFICATION_ENDPOINT, data)
 
     def detect(self, data):
         """Detect the anomalies in the data based on the learned AI model
@@ -169,16 +159,7 @@ class TimeSeriesAI:
             The anomaly detection result.
 
         """
-        # post data to the server
-        with self.http_session.post(
-            url=ANOMALY_DETECTION_ENDPOINT,
-            headers={
-                "authorization": self.authorization,
-            },
-            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
-            stream=True,
-        ) as response:
-            return check_response_code(response)
+        return self._post_data(ANOMALY_DETECTION_ENDPOINT, data)
 
     def cluster(self, data):
         """Cluster the data based on the learned AI model.
@@ -194,16 +175,19 @@ class TimeSeriesAI:
             The clustering result.
 
         """
-        # post data to the server
-        with self.http_session.post(
-            url=CLUSTERING_ENDPOINT,
-            headers={
-                "authorization": self.authorization,
-            },
-            files={"file": (os.path.basename(data), open(data, "rb"), "text/csv")},
-            stream=True,
-        ) as response:
-            return check_response_code(response)
+        return self._post_data(CLUSTERING_ENDPOINT, data)
+
+    def clean(self, data):
+        """Clean the given data based on the learned AI model.
+        Remove the noise and outliers from the data, and reconstruct it.
+
+        Returns
+        -------
+        np.ndarray
+            The cleaned data.
+
+        """
+        return self._post_data(CLEAN_ENDPOINT, data)
 
     def generate(self) -> np.ndarray:
         """Generate synthetic data based on the learned AI model.
@@ -217,18 +201,6 @@ class TimeSeriesAI:
         """
         pass
 
-    def clean(self, data) -> np.ndarray:
-        """Clean the given data based on the learned AI model.
-        Remove the noise and outliers from the data, and reconstruct it.
-
-        Returns
-        -------
-        np.ndarray
-            The cleaned data.
-
-        """
-        pass
-
     def persist(self) -> str:
         """Persist the session of the AI model learned context.
 
@@ -237,8 +209,7 @@ class TimeSeriesAI:
         session_id:
             The session ID to be used for restoring the AI model context.
         """
-        session_id: str = None
-        return session_id
+        pass
 
     def restore(self) -> None:
         """Restore the AI model context from the persisted session.
