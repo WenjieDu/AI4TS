@@ -74,17 +74,22 @@ def check_response_code(response: requests.Response):
 
         elif response.status_code == 401:
             # unauthorized access
+            sys.stdout.write("\b")
             logger.error("‼️Unauthorized access. Please check your API key.")
 
         elif response.status_code == 415:
             # unsupported media type
+            sys.stdout.write("\b")
             logger.error(f"❌{response.json()['detail']}")
 
         elif response.status_code == 521:
             # server is down
+            sys.stdout.write("\b")
             logger.error("🙇Server is not available now. Please try again later.")
 
         else:
+            # log info in the response for other status codes
+            sys.stdout.write("\b")
             logger.error(f"Response status code: {response.status_code}. Response body: {response.text}")
 
     finally:
