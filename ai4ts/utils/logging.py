@@ -20,7 +20,7 @@ class Logger:
     def __init__(
         self,
         name: str = "AI4TS running log",
-        logging_level: str = "debug",
+        logging_level: str = None,
         logging_format: str = "%(asctime)s [%(levelname)s]: %(message)s",
     ):
         """
@@ -37,6 +37,7 @@ class Logger:
 
         """
 
+        logging_level = os.getenv("LOGGING_LEVEL", "info") if logging_level is None else logging_level
         assert logging_level in LEVELS.keys(), f"logging_level should be {list(LEVELS.keys())}, but got {logging_level}"
 
         self.logger = logging.getLogger(name)

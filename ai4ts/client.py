@@ -27,6 +27,11 @@ from .utils import (
     check_file_size,
 )
 
+# the list of supported AI models
+MODEL_LIST = [
+    "gungnir_v1",
+]
+
 
 class TimeSeriesAI:
     """The client for interacting with the Time Series AI API.
@@ -42,15 +47,19 @@ class TimeSeriesAI:
     def __init__(
         self,
         api_key: str = None,
+        model: str = "gungnir_v1",
     ):
         self.api_key = determine_api_key(api_key)
         self.authorization = f"Bearer {api_key}"
         self.http_session = requests.session()
 
+        assert model in MODEL_LIST, f"Model {model} is not supported. Please choose from {MODEL_LIST}"
+        self.model = model
+
         # initialize the chat session
         session_config = {
             "chat": {
-                "models": ["Gungnir"],
+                "models": [self.model],
                 "timestamp": time.time(),
             }
         }
