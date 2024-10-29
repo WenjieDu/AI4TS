@@ -14,7 +14,7 @@ RESP_BEG_LEN = len(TEXT_RESP_BEG)
 
 BASE_URL = os.getenv(
     "TIMESERIESAI_BASE_URL",
-    "https://dashboard.time-series.ai",
+    "https://dash.time-series.ai",
 )
 
 # API endpoints for different functionalities
