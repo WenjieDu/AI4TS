@@ -87,7 +87,10 @@ def check_response_code(response: requests.Response):
             sys.stdout.write("\b")
             logger.error("🙇Server is not available now. Please try again later.")
             logger.debug(f"Response status code: {response.status_code}. Response body:\n{response.text}")
-
+        elif response.status_code in [
+            404,
+        ]:
+            logger.error(response.text)
         else:
             # log info in the response for other status codes
             sys.stdout.write("\b")
