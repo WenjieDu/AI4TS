@@ -20,12 +20,15 @@ from .config import (
     CLUSTERING_ENDPOINT,
     ANOMALY_DETECTION_ENDPOINT,
     CLEAN_ENDPOINT,
+    PERSIST_ENDPOINT,
+    RESTORE_ENDPOINT,
 )
 from .utils import (
     determine_api_key,
     response_handler,
     check_file_size,
 )
+from .utils.logging import logger
 
 # the list of supported AI models
 MODEL_LIST = [
@@ -210,23 +213,47 @@ class TimeSeriesAI:
         """
         pass
 
-    def persist(self) -> str:
-        """Persist the session of the AI model learned context.
+    def persist(
+        self,
+        alias: Optional[str] = None,
+    ) -> None:
+        """Persist the current session of the AI model learned context.
 
         Returns
         -------
         session_id:
             The session ID to be used for restoring the AI model context.
         """
-        pass
+        # post data to the server
+        with self.http_session.post(
+            url=PERSIST_ENDPOINT,
+            headers={
+                "authorization": self.authorization,
+                "chat_session_id": self.chat_session_id,
+                "alias": alias or "",
+            },
+            stream=True,
+        ) as response:
+            response_handler(response)
 
-    def restore(self) -> None:
-        """Restore the AI model context from the persisted session.
+    def restore(self, session_id: str) -> None:
+        """Restore the AI model context from the persisted session with the given session ID.
 
         Returns
         -------
         None
 
         """
+        with self.http_session.post(
+            url=RESTORE_ENDPOINT,
+            headers={
+                "authorization": self.authorization,
+                "chat_session_id": session_id,
+            },
+            stream=True,
+        ) as response:
+            response_handler(response)
 
-        pass
+        if session_id != self.chat_session_id:
+            self.chat_session_id = session_id
+            logger.info(f"Switched session to {self.chat_session_id}")
