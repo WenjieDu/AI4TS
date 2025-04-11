@@ -7,6 +7,7 @@ The client module for interacting with the Time Series AI API.
 
 import os
 import time
+from typing import Optional
 
 import numpy as np
 import requests
@@ -59,26 +60,8 @@ class TimeSeriesAI:
         assert model in MODEL_LIST, f"Model {model} is not supported. Please choose from {MODEL_LIST}"
         self.model = model
 
-        # initialize the chat session
-        session_config = {
-            "chat": {
-                "models": [self.model],
-                "timestamp": time.time(),
-            }
-        }
-        with self.http_session.post(
-            url=INIT_ENDPOINT,
-            headers={
-                "authorization": self.authorization,
-                "Accept": "application/json",
-            },
-            json=session_config,
-            stream=True,
-        ) as response:
-            result = response_handler(response)
-
-        self.chat_session_id = result["chat_session_id"] if response.status_code == 200 else None
-        self.max_file_size_in_mb = result["max_file_size_in_mb"] if response.status_code == 200 else None
+        self.chat_session_id = None
+        self.max_file_size_in_mb = None
 
     def _post_data(
         self,
@@ -86,6 +69,12 @@ class TimeSeriesAI:
         data: str,
     ):
         result = None
+        if not os.path.exists(data):
+            logger.error(f"❌ File {data} does not exist")
+            return result
+        if self.chat_session_id is None:
+            logger.error("❌ Chat session is not initialized. Call `learn` to feed your data into the AI model first.")
+            return result
 
         if check_file_size(data, self.max_file_size_in_mb):  # check the file size
             # post data to the server
@@ -114,6 +103,26 @@ class TimeSeriesAI:
         None
 
         """
+        # initialize the chat session first
+        session_config = {
+            "chat": {
+                "models": [self.model],
+                "timestamp": time.time(),
+            }
+        }
+        with self.http_session.post(
+            url=INIT_ENDPOINT,
+            headers={
+                "authorization": self.authorization,
+                "Accept": "application/json",
+            },
+            json=session_config,
+            stream=True,
+        ) as response:
+            result = response_handler(response)
+        self.chat_session_id = result["chat_session_id"] if response.status_code == 200 else None
+        self.max_file_size_in_mb = result["max_file_size_in_mb"] if response.status_code == 200 else None
+
         return self._post_data(LEARNING_ENDPOINT, data)
 
     def impute(self, data):
