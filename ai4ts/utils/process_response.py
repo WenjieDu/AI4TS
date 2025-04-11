@@ -5,11 +5,13 @@ Utility functions for the ai4ts package.
 # Created by Wenjie Du <wdu@time-series.ai>
 # License: Apache-2.0
 
+import io
 import json
 import sys
 import threading
 import time
 
+import pandas as pd
 import requests
 
 from .logging import logger
@@ -36,7 +38,13 @@ class SpinningCursor(threading.Thread):
         self.join()
 
 
-def check_response_code(response: requests.Response):
+def bytes2df_handler(response):
+    file_obj = io.BytesIO(response.content)
+    dataframe = pd.read_parquet(file_obj)
+    return dataframe
+
+
+def response_handler(response: requests.Response):
     """Check the response status code and print the corresponding message.
 
     Parameters
@@ -54,23 +62,28 @@ def check_response_code(response: requests.Response):
     spinning_cursor.start()
     try:
         if response.status_code == 200:
-            # print the response content line by line for streaming response
-            buffer = ""
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    buffer += chunk.decode("utf-8")
-                    while "\n" in buffer:
-                        line, buffer = buffer.split("\n", 1)
-                        line = line.strip()
+            if response.headers.get("Content-Type") == "application/octet-stream":
+                # process binary data
+                df = bytes2df_handler(response)
+                return df
+            else:
+                # print the response content line by line for streaming response
+                buffer = ""
+                for chunk in response.iter_content(chunk_size=1):
+                    if chunk:
+                        buffer += chunk.decode("utf-8")
+                        while "\n" in buffer:
+                            line, buffer = buffer.split("\n", 1)
+                            line = line.strip()
 
-                        if not line:
-                            continue
+                            if not line:
+                                continue
 
-                        if line.startswith(TEXT_RESP_BEG):
-                            sys.stdout.write("\b")
-                            logger.info(line[RESP_BEG_LEN:])
-                        elif line.startswith(JSON_RESP_BEG):
-                            return json.loads(line[RESP_BEG_LEN:])
+                            if line.startswith(TEXT_RESP_BEG):
+                                sys.stdout.write("\b")
+                                logger.info(line[RESP_BEG_LEN:])
+                            elif line.startswith(JSON_RESP_BEG):
+                                return json.loads(line[RESP_BEG_LEN:])
 
         elif response.status_code == 401:
             # unauthorized access
@@ -90,6 +103,7 @@ def check_response_code(response: requests.Response):
         elif response.status_code in [
             404,
         ]:
+            # for specific errors like 404, directly print the error message from the server
             logger.error(response.text)
         else:
             # log info in the response for other status codes

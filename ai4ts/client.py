@@ -23,7 +23,7 @@ from .config import (
 )
 from .utils import (
     determine_api_key,
-    check_response_code,
+    response_handler,
     check_file_size,
 )
 
@@ -72,7 +72,7 @@ class TimeSeriesAI:
             json=session_config,
             stream=True,
         ) as response:
-            result = check_response_code(response)
+            result = response_handler(response)
 
         self.chat_session_id = result["chat_session_id"] if response.status_code == 200 else None
         self.max_file_size_in_mb = result["max_file_size_in_mb"] if response.status_code == 200 else None
@@ -97,7 +97,7 @@ class TimeSeriesAI:
                 },
                 stream=True,
             ) as response:
-                result = check_response_code(response)
+                result = response_handler(response)
 
         return result
 
