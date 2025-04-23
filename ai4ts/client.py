@@ -63,29 +63,46 @@ class TimeSeriesAI:
         self.chat_session_id = None
         self.max_file_size_in_mb = None
 
-    def _post_data(
+    def _post_to_endpoint(
         self,
         endpoint: str,
         data: str,
+        **kwargs: Optional[dict],
     ):
         result = None
-        if not os.path.exists(data):
-            logger.error(f"❌ File {data} does not exist")
-            return result
         if self.chat_session_id is None:
             logger.error("❌ Chat session is not initialized. Call `learn` to feed your data into the AI model first.")
-            return result
+            return None
 
-        if check_file_size(data, self.max_file_size_in_mb):  # check the file size
+        if data is not None:
+            if not os.path.exists(data):
+                logger.error(f"❌ File {data} does not exist")
+                return None
+            if not check_file_size(data, self.max_file_size_in_mb):  # check the file size
+                logger.error(f"❌ File {data} exceeds the maximum size limit of {self.max_file_size_in_mb}MB")
+                return None
+
             # post data to the server
             with self.http_session.post(
                 url=endpoint,
                 headers={
                     "authorization": self.authorization,
                     "chat_session_id": self.chat_session_id,
+                    **kwargs,
                 },
                 files={
                     "file": (os.path.basename(data), open(data, "rb"), "text/csv"),
+                },
+                stream=True,
+            ) as response:
+                result = response_handler(response)
+        else:
+            with self.http_session.post(
+                url=endpoint,
+                headers={
+                    "authorization": self.authorization,
+                    "chat_session_id": self.chat_session_id,
+                    **kwargs,
                 },
                 stream=True,
             ) as response:
@@ -123,9 +140,9 @@ class TimeSeriesAI:
         self.chat_session_id = result["chat_session_id"] if response.status_code == 200 else None
         self.max_file_size_in_mb = result["max_file_size_in_mb"] if response.status_code == 200 else None
 
-        return self._post_data(LEARNING_ENDPOINT, data)
+        return self._post_to_endpoint(LEARNING_ENDPOINT, data)
 
-    def impute(self, data):
+    def impute(self, data: Optional[str] = None):
         """Impute the missing values in the data based on the learned AI model.
 
         data:
@@ -137,9 +154,14 @@ class TimeSeriesAI:
             The imputed data.
 
         """
-        return self._post_data(IMPUTATION_ENDPOINT, data)
+        result = self._post_to_endpoint(IMPUTATION_ENDPOINT, data)
+        return result
 
-    def forecast(self, data):
+    def forecast(
+        self,
+        data: Optional[str] = None,
+        n_forecast_steps: Optional[int] = None,
+    ):
         """Forecast the future values based on the learned AI model.
 
         Parameters
@@ -147,15 +169,21 @@ class TimeSeriesAI:
         data:
             The historic time series data to be used for forecasting.
 
+        n_forecast_steps:
+            The number of future steps to forecast for each sample.
+
         Returns
         -------
         np.ndarray
             The forecasting result.
 
         """
-        return self._post_data(FORECASTING_ENDPOINT, data)
+        kwargs = {
+            "n_forecast_steps": n_forecast_steps,
+        }
+        return self._post_to_endpoint(FORECASTING_ENDPOINT, data, **kwargs)
 
-    def classify(self, data):
+    def classify(self, data: Optional[str] = None):
         """Classify the data based on the learned AI model.
 
         Parameters
@@ -169,10 +197,25 @@ class TimeSeriesAI:
             The classification result.
 
         """
-        return self._post_data(CLASSIFICATION_ENDPOINT, data)
+        return self._post_to_endpoint(CLASSIFICATION_ENDPOINT, data)
 
-    def detect(self, data):
+    def detect(
+        self,
+        data: Optional[str] = None,
+        anomaly_rate: float = 0.01,
+    ):
         """Detect the anomalies in the data based on the learned AI model
+
+        Parameters
+        ----------
+        data:
+            The time series data to be clustered.
+
+        anomaly_rate:
+            The expected anomaly rate in the data.
+            This is used to adjust the sensitivity of the anomaly detection algorithm.
+            A higher value means more anomalies will be detected,
+            while a lower value means fewer anomalies will be detected.
 
         Returns
         -------
@@ -180,9 +223,20 @@ class TimeSeriesAI:
             The anomaly detection result.
 
         """
-        return self._post_data(ANOMALY_DETECTION_ENDPOINT, data)
+        kwargs = {
+            "anomaly_rate": anomaly_rate,
+        }
+        return self._post_to_endpoint(
+            ANOMALY_DETECTION_ENDPOINT,
+            data,
+            **kwargs,
+        )
 
-    def cluster(self, data):
+    def cluster(
+        self,
+        data: Optional[str] = None,
+        n_clusters: Optional[int] = None,
+    ):
         """Cluster the data based on the learned AI model.
 
         Parameters
@@ -190,17 +244,42 @@ class TimeSeriesAI:
         data:
             The time series data to be clustered.
 
+        n_clusters:
+            Number of clusters to form.
+
         Returns
         -------
         np.ndarray
             The clustering result.
 
         """
-        return self._post_data(CLUSTERING_ENDPOINT, data)
+        kwargs = {
+            "n_clusters": n_clusters,
+        }
+        return self._post_to_endpoint(
+            CLUSTERING_ENDPOINT,
+            data,
+            **kwargs,
+        )
 
-    def clean(self, data):
+    def clean(
+        self,
+        data: Optional[str] = None,
+        anomaly_rate: float = 0,
+    ):
         """Clean the given data based on the learned AI model.
-        Remove the noise and outliers from the data, and reconstruct it.
+        Remove the noise and outliers from the data and reconstruct it.
+
+        Parameters
+        ----------
+        data:
+            The time series data to be clustered.
+
+        anomaly_rate:
+            The expected anomaly rate in the data.
+            This is used to adjust the sensitivity of the anomaly detection algorithm.
+            A higher value means more anomalies will be detected,
+            while a lower value means fewer anomalies will be detected.
 
         Returns
         -------
@@ -208,7 +287,14 @@ class TimeSeriesAI:
             The cleaned data.
 
         """
-        return self._post_data(CLEAN_ENDPOINT, data)
+        kwargs = {
+            "anomaly_rate": anomaly_rate,
+        }
+        return self._post_to_endpoint(
+            CLEAN_ENDPOINT,
+            data,
+            **kwargs,
+        )
 
     def generate(self) -> np.ndarray:
         """Generate synthetic data based on the learned AI model.
