@@ -24,7 +24,7 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder
 
 from .constants import COL_NAME_SAMPLE_ID, COL_NAME_TIMESTAMP
-from .enums import ScalerType, InputFormat, TaskType
+from .enums import ScalerType, InputFormat, TaskType, MissingValueStrategy
 from .schemas import (
     ProcessingConfig,
     TimeSeriesMetadata,
@@ -110,9 +110,15 @@ class TimeSeriesConverter:
         self,
         arr: np.ndarray,
         feature_names: list[str] | None = None,
+        sample_ids: list | None = None,
     ) -> tuple[pd.DataFrame, TimeSeriesMetadata]:
-        """Convert, validate, and prepare a numpy array."""
-        df, _ = validate_numpy_array(arr, feature_names)
+        """Convert, validate, and prepare a numpy array.
+
+        Accepts 2D (timesteps, features) or 3D (samples, timesteps, features).
+        NaN values in the input are preserved throughout the pipeline when
+        missing_value_strategy is NAN_KEEP.
+        """
+        df, _ = validate_numpy_array(arr, feature_names, sample_ids)
         return self._prepare(df)
 
     def from_dataframe(self, df: pd.DataFrame) -> tuple[pd.DataFrame, TimeSeriesMetadata]:
@@ -146,7 +152,13 @@ class TimeSeriesConverter:
         return df, self.metadata
 
     def _fit_scaler(self, df: pd.DataFrame) -> None:
-        """Fit and apply scaler to numeric features."""
+        """Fit and apply scaler to numeric features.
+
+        NaN values are excluded during fitting and preserved during transformation.
+        The scaler is fitted only on observed (non-NaN) values, so missing data
+        does not corrupt the learned statistics (mean, std, min, max).
+        After transformation, positions that were NaN remain NaN.
+        """
         if self.config.scaler_type == ScalerType.NONE:
             self.scaler = None
             return
@@ -157,8 +169,27 @@ class TimeSeriesConverter:
         elif self.config.scaler_type == ScalerType.MINMAX:
             self.scaler = MinMaxScaler()
 
-        self.scaler.fit(df[numeric_cols].values.astype(np.float64))
-        df[numeric_cols] = self.scaler.transform(df[numeric_cols].values.astype(np.float64))
+        raw = df[numeric_cols].values.astype(np.float64)
+        nan_mask = np.isnan(raw)
+        has_nan = nan_mask.any()
+
+        if has_nan:
+            # Fit on non-NaN values only: fill NaN temporarily for fitting,
+            # then restore NaN positions after transform
+            col_means = np.nanmean(raw, axis=0)
+            # Replace NaN with column means for fitting
+            filled = raw.copy()
+            for j in range(raw.shape[1]):
+                col_nans = nan_mask[:, j]
+                filled[col_nans, j] = col_means[j]
+            self.scaler.fit(filled)
+            transformed = self.scaler.transform(filled)
+            # Restore NaN positions
+            transformed[nan_mask] = np.nan
+            df[numeric_cols] = transformed
+        else:
+            self.scaler.fit(raw)
+            df[numeric_cols] = self.scaler.transform(raw)
 
     def _fit_label_encoder(self, df: pd.DataFrame) -> None:
         """Fit label encoder for classification targets."""
@@ -355,19 +386,32 @@ class TimeSeriesConverter:
         ind_mask_all: np.ndarray | None,
         training_mode: bool,
     ) -> None:
-        """Process a single sample: fill, mask, anchor, pad."""
+        """Process a single sample: fill/keep NaN, mask, anchor, pad.
+
+        When missing_value_strategy is NAN_KEEP, NaN values are preserved in
+        the output arrays so downstream models (e.g. PyPOTS) can handle them
+        natively. The missing_mask still records which positions are NaN.
+        """
         X_ori = segment.copy()
+        keep_nan = config.missing_value_strategy == MissingValueStrategy.NAN_KEEP
 
         if training_mode and config.artificial_missing_rate > 0:
             X_with_missing = inject_artificial_missing(X_ori, config.artificial_missing_rate, rng)
         else:
             X_with_missing = X_ori.copy()
 
-        # Fill and mask
-        X_filled, missing_mask = fill_and_get_mask(X_with_missing)
-        _, ori_mask = fill_and_get_mask(X_ori)
+        # Create masks before any filling
+        missing_mask = create_missing_mask(X_with_missing)
+        ori_mask = create_missing_mask(X_ori)
+
+        if keep_nan:
+            # Preserve NaN in data; only fill anchor/padding positions
+            X_filled = X_with_missing.copy()
+        else:
+            X_filled = forward_fill(X_with_missing)
 
         # Indicating mask (train only): marks artificially injected missing values
+        indicating_mask = None
         if training_mode:
             indicating_mask = ori_mask - missing_mask
             indicating_mask = np.clip(indicating_mask, 0, 1)
@@ -393,8 +437,11 @@ class TimeSeriesConverter:
         sample_lengths.append(min(actual_len, max_steps))
 
         if training_mode and X_ori_all is not None and ind_mask_all is not None:
-            X_ori_filled = forward_fill(X_ori)
-            X_ori_anchored = insert_anchor_points(X_ori_filled, config.n_anchor_points)
+            if keep_nan:
+                X_ori_processed = X_ori.copy()
+            else:
+                X_ori_processed = forward_fill(X_ori)
+            X_ori_anchored = insert_anchor_points(X_ori_processed, config.n_anchor_points)
             X_ori_padded, _ = pad_sequence(X_ori_anchored, max_steps)
             X_ori_all[idx] = X_ori_padded
 
@@ -460,7 +507,18 @@ class TimeSeriesConverter:
             segment = sample[start:end]
 
             if inverse_scale and self.scaler is not None:
-                segment = self.scaler.inverse_transform(segment.astype(np.float64))
+                # Preserve NaN positions through inverse transform
+                seg_float = segment.astype(np.float64)
+                nan_mask = np.isnan(seg_float)
+                if nan_mask.any():
+                    # Fill NaN temporarily for inverse_transform, then restore
+                    seg_filled = seg_float.copy()
+                    seg_filled[nan_mask] = 0.0
+                    seg_inv = self.scaler.inverse_transform(seg_filled)
+                    seg_inv[nan_mask] = np.nan
+                    segment = seg_inv
+                else:
+                    segment = self.scaler.inverse_transform(seg_float)
 
             sample_df = pd.DataFrame(segment, columns=names)
             if n_samples > 1:

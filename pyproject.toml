@@ -53,7 +53,7 @@ keywords = [
 ]
 
 [project.scripts]
-ai4ts = "ai4ts.cli:cli"
+ai4ts-cli = "ai4ts.cli:cli"
 
 [project.urls]
 Source = "https://github.com/WenjieDu/AI4TS"

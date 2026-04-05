@@ -60,16 +60,25 @@ def validate_csv_file(path: str | Path) -> pd.DataFrame:
 def validate_numpy_array(
     arr: np.ndarray,
     feature_names: list[str] | None = None,
+    sample_ids: list | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     """
     Validate a numpy array and convert to DataFrame.
 
+    Accepts either:
+    - 2D array with shape (timesteps, features) — treated as a single sample
+    - 3D array with shape (n_samples, timesteps, features) — multi-sample dataset
+
+    NaN values in the input are preserved in the output DataFrame.
+
     Parameters
     ----------
     arr : np.ndarray
-        Input array. Must be 2D with shape (timesteps, features).
+        Input array. Must be 2D or 3D.
     feature_names : list[str] or None
         Column names. If None, auto-generated as feat_0, feat_1, ...
+    sample_ids : list or None
+        Sample identifiers for 3D arrays. If None, uses 0, 1, 2, ...
 
     Returns
     -------
@@ -79,26 +88,56 @@ def validate_numpy_array(
     Raises
     ------
     ValidationError
-        If array is not 2D or is empty.
+        If array shape is invalid or data is empty.
     """
-    if arr.ndim != 2:
+    if arr.ndim not in (2, 3):
         raise ValidationError(
-            f"Expected 2D array (timesteps, features), got {arr.ndim}D with shape {arr.shape}."
+            f"Expected 2D (timesteps, features) or 3D (samples, timesteps, features) array, "
+            f"got {arr.ndim}D with shape {arr.shape}."
         )
-    if arr.shape[0] == 0 or arr.shape[1] == 0:
-        raise ValidationError(f"Array must not be empty, got shape {arr.shape}.")
+
+    # Check for non-NaN numeric content (NaN itself is numeric/float)
     if not np.issubdtype(arr.dtype, np.number):
         raise ValidationError(f"Array must be numeric, got dtype {arr.dtype}.")
 
-    n_features = arr.shape[1]
+    if arr.ndim == 2:
+        if arr.shape[0] == 0 or arr.shape[1] == 0:
+            raise ValidationError(f"Array must not be empty, got shape {arr.shape}.")
+
+        n_features = arr.shape[1]
+        if feature_names is None:
+            feature_names = [f"feat_{i}" for i in range(n_features)]
+        elif len(feature_names) != n_features:
+            raise ValidationError(
+                f"feature_names length ({len(feature_names)}) != array columns ({n_features})."
+            )
+        df = pd.DataFrame(arr, columns=feature_names)
+        return df, feature_names
+
+    # 3D array: (n_samples, timesteps, features)
+    n_samples, n_timesteps, n_features = arr.shape
+    if n_samples == 0 or n_timesteps == 0 or n_features == 0:
+        raise ValidationError(f"Array must not be empty, got shape {arr.shape}.")
+
     if feature_names is None:
         feature_names = [f"feat_{i}" for i in range(n_features)]
     elif len(feature_names) != n_features:
         raise ValidationError(
-            f"feature_names length ({len(feature_names)}) != array columns ({n_features})."
+            f"feature_names length ({len(feature_names)}) != array features ({n_features})."
         )
 
-    df = pd.DataFrame(arr, columns=feature_names)
+    if sample_ids is not None and len(sample_ids) != n_samples:
+        raise ValidationError(
+            f"sample_ids length ({len(sample_ids)}) != number of samples ({n_samples})."
+        )
+
+    frames = []
+    for i in range(n_samples):
+        sample_df = pd.DataFrame(arr[i], columns=feature_names)
+        sample_df[COL_NAME_SAMPLE_ID] = sample_ids[i] if sample_ids is not None else i
+        frames.append(sample_df)
+
+    df = pd.concat(frames, ignore_index=True)
     return df, feature_names
 
 
