@@ -7,6 +7,9 @@ Configurations for the ai4ts package.
 
 import os
 
+# protocols (imported from data_protocols for backward compatibility)
+from .data_protocols.constants import CLAF_TARGET_SYMBOL, COL_NAME_SAMPLE_ID
+
 # beginnings of text and json content in the server response
 TEXT_RESP_BEG = "TEXT:"
 JSON_RESP_BEG = "JSON:"

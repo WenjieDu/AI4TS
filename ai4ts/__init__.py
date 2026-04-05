@@ -37,3 +37,5 @@ ai4ts v{__version__} - building AI for unified time-series analysis, https://tim
     logo = logo.encode("utf-8").decode(sys.stdout.encoding, errors="ignore")
 
 print(logo)
+
+from . import data_protocols
