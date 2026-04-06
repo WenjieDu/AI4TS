@@ -68,6 +68,25 @@ from .utils import (
     inject_artificial_missing,
 )
 
+from .profile import (
+    DataProfile,
+    DatasetStats,
+    SchemaMapping,
+    TimestampInfo,
+    analyze_dataset,
+)
+
+from .registry import (
+    WindowEntry,
+    WindowRegistry,
+)
+
+from .pipeline import (
+    prepare_for_pypots,
+    split_by_sample_id,
+    reconstruct_from_predictions,
+)
+
 __all__ = [
     # Constants
     "COL_NAME_SAMPLE_ID", "COL_NAME_SAMPLE_LABEL", "COL_NAME_STEP_LABEL",
@@ -92,4 +111,11 @@ __all__ = [
     "forward_fill", "create_missing_mask", "fill_and_get_mask",
     "insert_anchor_points", "pad_sequence", "create_padding_mask",
     "inject_artificial_missing",
+    # Profile
+    "DataProfile", "DatasetStats", "SchemaMapping", "TimestampInfo",
+    "analyze_dataset",
+    # Registry
+    "WindowEntry", "WindowRegistry",
+    # Pipeline
+    "prepare_for_pypots", "split_by_sample_id", "reconstruct_from_predictions",
 ]
