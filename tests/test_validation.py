@@ -2,6 +2,9 @@
 Tests for ai4ts.data_protocols.validation module.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import tempfile
 

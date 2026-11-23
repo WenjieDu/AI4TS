@@ -1,9 +1,7 @@
-"""
-
-"""
+"""File size and data protocol checks."""
 
 # Created by Wenjie Du <wdu@time-series.ai>
-# License: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 import os
 

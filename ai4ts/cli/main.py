@@ -3,13 +3,15 @@ Main CLI group for the AI4TS package.
 """
 
 # Created by Wenjie Du <wdu@time-series.ai>
-# License: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 import click
 
+from .analyze import analyze
+
 from .config_cmd import config
 from .data_cmd import data
-from .task_cmd import learn, impute, forecast, classify, detect, cluster, clean, persist, restore
+from .services import service
 from .version_cmd import version
 
 
@@ -25,13 +27,6 @@ def cli():
 
 cli.add_command(config)
 cli.add_command(data)
-cli.add_command(learn)
-cli.add_command(impute)
-cli.add_command(forecast)
-cli.add_command(classify)
-cli.add_command(detect)
-cli.add_command(cluster)
-cli.add_command(clean)
-cli.add_command(persist)
-cli.add_command(restore)
+cli.add_command(analyze)
+cli.add_command(service)
 cli.add_command(version)

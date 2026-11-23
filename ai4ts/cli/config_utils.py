@@ -5,7 +5,7 @@ Manages reading and writing CLI configuration stored at ~/.ai4ts/config.json.
 """
 
 # Created by Wenjie Du <wdu@time-series.ai>
-# License: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 import json
 import os

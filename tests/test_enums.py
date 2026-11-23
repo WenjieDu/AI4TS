@@ -2,6 +2,9 @@
 Tests for ai4ts.data_protocols.enums module.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 import pytest
 
 from ai4ts.data_protocols.enums import (
@@ -23,9 +26,10 @@ class TestTaskType:
         assert TaskType.CLASSIFICATION == "classification"
         assert TaskType.ANOMALY_DETECTION == "anomaly_detection"
         assert TaskType.CLUSTERING == "clustering"
+        assert TaskType.REPRESENTATION == "representation"
 
     def test_task_type_count(self):
-        assert len(TaskType) == 5
+        assert len(TaskType) == 6
 
     def test_task_type_is_string(self):
         for t in TaskType:

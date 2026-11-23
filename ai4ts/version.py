@@ -3,7 +3,7 @@ Version information for AI4TS.
 """
 
 # Created by Wenjie Du <wdu@time-series.ai>
-# License: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 # AI4TS version
 #
@@ -21,4 +21,4 @@ Version information for AI4TS.
 #
 # Dev branch marker is: 'X.Y.dev' or 'X.Y.devN' where N is an integer.
 # 'X.Y.dev0' is the canonical version of 'X.Y.dev'
-__version__ = "0.0.3"
+__version__ = "0.0.4a8"

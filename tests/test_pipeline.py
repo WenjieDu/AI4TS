@@ -2,20 +2,17 @@
 Tests for ai4ts.data_protocols.profile, registry, and pipeline modules.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 import json
-import os
-import tempfile
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from ai4ts.data_protocols.constants import COL_NAME_SAMPLE_ID, CLAF_TARGET_SYMBOL
 from ai4ts.data_protocols.profile import (
     DataProfile,
-    DatasetStats,
-    SchemaMapping,
-    TimestampInfo,
     analyze_dataset,
 )
 from ai4ts.data_protocols.registry import WindowEntry, WindowRegistry
@@ -27,10 +24,10 @@ from ai4ts.data_protocols.pipeline import (
     _DIRECT_THRESHOLD,
 )
 
-
 # ──────────────────────────────────────────────────────────────
 # Fixtures: reusable CSV files
 # ──────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def uniform_csv(tmp_path):
@@ -74,11 +71,13 @@ def long_single_csv(tmp_path):
     n_steps = 500
     rows = []
     for step in range(n_steps):
-        rows.append({
-            "SAMPLE_ID": 0,
-            "feat_0": rng.randn(),
-            "feat_1": rng.randn(),
-        })
+        rows.append(
+            {
+                "SAMPLE_ID": 0,
+                "feat_0": rng.randn(),
+                "feat_1": rng.randn(),
+            }
+        )
     path = tmp_path / "long_single.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     return str(path)
@@ -92,11 +91,13 @@ def timestamp_csv(tmp_path):
     rows = []
     for sid in range(2):
         for i, ts in enumerate(timestamps):
-            rows.append({
-                "SAMPLE_ID": sid,
-                "TIMESTAMP": ts,
-                "feat_0": rng.randn(),
-            })
+            rows.append(
+                {
+                    "SAMPLE_ID": sid,
+                    "TIMESTAMP": ts,
+                    "feat_0": rng.randn(),
+                }
+            )
     path = tmp_path / "timestamp.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     return str(path)
@@ -105,6 +106,7 @@ def timestamp_csv(tmp_path):
 # ──────────────────────────────────────────────────────────────
 # Profile Tests
 # ──────────────────────────────────────────────────────────────
+
 
 class TestAnalyzeDataset:
     def test_uniform_csv_stats(self, uniform_csv):
@@ -163,6 +165,7 @@ class TestAnalyzeDataset:
 # ──────────────────────────────────────────────────────────────
 # Registry Tests
 # ──────────────────────────────────────────────────────────────
+
 
 class TestWindowRegistry:
     def test_add_and_count(self):
@@ -228,6 +231,7 @@ class TestWindowEntry:
 # Strategy Tests
 # ──────────────────────────────────────────────────────────────
 
+
 class TestDetermineStrategy:
     def test_classification_always_pad_only(self):
         strategy, ws = _determine_strategy([10, 20, 15], True, None)
@@ -257,12 +261,13 @@ class TestDetermineStrategy:
         """If data fits in one window and uniform, still direct."""
         strategy, ws = _determine_strategy([50, 50], False, 200)
         assert strategy == "direct"
-        assert ws == 50
+        assert ws == 200
 
 
 # ──────────────────────────────────────────────────────────────
 # Pipeline Tests
 # ──────────────────────────────────────────────────────────────
+
 
 class TestPrepareForPyPOTS:
     def test_uniform_imputation(self, uniform_csv):
@@ -346,6 +351,7 @@ class TestSplitBySampleId:
 # Reconstruction Tests
 # ──────────────────────────────────────────────────────────────
 
+
 class TestReconstructFromPredictions:
     def test_direct_exact_roundtrip(self, uniform_csv):
         """Direct strategy: reconstruction should perfectly match original."""
@@ -356,7 +362,7 @@ class TestReconstructFromPredictions:
         reconstructed = reconstruct_from_predictions(X_ori, registry)
         assert len(reconstructed) == 10
         for sid in range(10):
-            assert reconstructed[sid].shape == (8, 3)
+            assert reconstructed[str(sid)].shape == (8, 3)
 
     def test_classification_strips_padding(self, classification_csv):
         """Pad-only: reconstruction must strip padding and recover original lengths."""
@@ -367,9 +373,9 @@ class TestReconstructFromPredictions:
         reconstructed = reconstruct_from_predictions(X_ori, registry)
         expected_lengths = [10, 15, 10, 20, 12, 15, 10, 18, 14, 10]
         for sid, expected_len in enumerate(expected_lengths):
-            assert reconstructed[sid].shape[0] == expected_len, (
-                f"Sample {sid}: expected {expected_len} but got {reconstructed[sid].shape[0]}"
-            )
+            assert (
+                reconstructed[str(sid)].shape[0] == expected_len
+            ), f"Sample {sid}: expected {expected_len} but got {reconstructed[str(sid)].shape[0]}"
 
     def test_sliding_window_reconstruction(self, long_single_csv):
         """Sliding window: reconstruction should exactly match original length."""
@@ -378,14 +384,14 @@ class TestReconstructFromPredictions:
         registry = result["registry"]
 
         reconstructed = reconstruct_from_predictions(X_ori, registry)
-        assert 0 in reconstructed
-        assert reconstructed[0].shape[0] == 500
+        assert "0" in reconstructed
+        assert reconstructed["0"].shape[0] == 500
 
     def test_shape_mismatch_raises(self):
         reg = WindowRegistry(window_size=10)
         reg.add(WindowEntry(0, "A", 0, 10))
         fake_pred = np.zeros((5, 10, 3))  # 5 windows but registry has 1
-        with pytest.raises(ValueError, match="5 windows but registry has 1"):
+        with pytest.raises(ValueError, match="Prediction shape does not match"):
             reconstruct_from_predictions(fake_pred, reg)
 
     def test_sliding_window_values_match(self, long_single_csv):
@@ -398,6 +404,5 @@ class TestReconstructFromPredictions:
         reconstructed = reconstruct_from_predictions(result["X_ori"], result["registry"])
 
         np.testing.assert_allclose(
-            reconstructed[0], original, rtol=1e-10,
-            err_msg="Reconstructed values don't match original"
+            reconstructed["0"], original, rtol=1e-10, err_msg="Reconstructed values don't match original"
         )

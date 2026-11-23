@@ -2,6 +2,9 @@
 Low-level utility functions for time series data processing.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 import numpy as np
 import pandas as pd
 from pandas.api import types as pd_types

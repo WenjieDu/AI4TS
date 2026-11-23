@@ -1,9 +1,7 @@
-"""
-
-"""
+"""Shared utilities for API authentication, responses, and file validation."""
 
 # Created by Wenjie Du <wdu@time-series.ai>
-# License: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 from .apikey import determine_api_key
 from .file import check_file_size

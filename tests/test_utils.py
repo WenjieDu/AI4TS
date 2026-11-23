@@ -2,6 +2,9 @@
 Tests for ai4ts.data_protocols.utils module.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 import pytest
 import numpy as np
 import pandas as pd

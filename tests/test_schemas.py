@@ -2,6 +2,9 @@
 Tests for ai4ts.data_protocols.schemas module.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 import pytest
 
 from ai4ts.data_protocols.schemas import (
@@ -129,7 +132,7 @@ class TestProcessingConfig:
         assert config.n_anchor_points == DEFAULT_N_ANCHOR_POINTS
         assert config.artificial_missing_rate == DEFAULT_ARTIFICIAL_MISSING_RATE
         assert config.scaler_type == ScalerType.STANDARD
-        assert config.missing_value_strategy == MissingValueStrategy.FORWARD_FILL
+        assert config.missing_value_strategy == MissingValueStrategy.NAN_KEEP
 
     def test_max_input_steps(self):
         config = ProcessingConfig(ts_context_len=64, n_anchor_points=3)

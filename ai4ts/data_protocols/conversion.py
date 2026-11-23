@@ -15,6 +15,9 @@ And the reverse:
   Model output arrays → inverse-scaled → reconstructed DataFrame/numpy/CSV
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 from pathlib import Path
 from typing import Any
@@ -254,6 +257,8 @@ class TimeSeriesConverter:
 
         df = self._df
         config = self.config
+        if config.missing_value_strategy not in (MissingValueStrategy.NAN_KEEP, MissingValueStrategy.FORWARD_FILL):
+            raise ValueError("Sample conversion supports only nan_keep and forward_fill.")
         meta = self.metadata
         numeric_cols = meta.numeric_feature_names
         n_features = len(numeric_cols)
@@ -388,7 +393,7 @@ class TimeSeriesConverter:
     ) -> None:
         """Process a single sample: fill/keep NaN, mask, anchor, pad.
 
-        When missing_value_strategy is NAN_KEEP, NaN values are preserved in
+        By default, NAN_KEEP preserves NaN values in
         the output arrays so downstream models (e.g. PyPOTS) can handle them
         natively. The missing_mask still records which positions are NaN.
         """

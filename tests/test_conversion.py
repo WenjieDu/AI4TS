@@ -10,6 +10,9 @@ Tests the full data conversion pipeline including:
 - Scaling with missing values
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 import os
 import tempfile
 
@@ -357,6 +360,13 @@ class TestConverterTensorOutput:
 
 class TestNanKeepStrategy:
     """Tests that NAN_KEEP strategy preserves NaN values through the pipeline."""
+
+    @pytest.mark.parametrize("strategy", [MissingValueStrategy.ZERO_FILL, MissingValueStrategy.MEAN_FILL])
+    def test_unsupported_strategy_does_not_fall_back_to_forward_fill(self, df_with_missing, strategy):
+        converter = TimeSeriesConverter(ProcessingConfig(missing_value_strategy=strategy, scaler_type=ScalerType.NONE))
+        converter.from_dataframe(df_with_missing)
+        with pytest.raises(ValueError, match="only nan_keep and forward_fill"):
+            converter.to_tensor_samples(training_mode=False)
 
     def test_nan_keep_preserves_nan_in_tensor(self, df_with_missing):
         """With NAN_KEEP, NaN values should be present in the output tensor."""

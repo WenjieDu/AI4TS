@@ -5,6 +5,9 @@ These constants define the reserved column names, symbols, and default values
 used across the entire TimeSeries AI platform (SDK, backend, model library).
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 # Reserved column names
 COL_NAME_SAMPLE_ID = "SAMPLE_ID"
 COL_NAME_SAMPLE_LABEL = "SAMPLE_LABEL"

@@ -2,6 +2,9 @@
 Pydantic models describing time series data structure at each stage of the pipeline.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 from typing import Any, Optional
 from pydantic import BaseModel, Field, model_validator
@@ -65,7 +68,7 @@ class ProcessingConfig(BaseModel):
     n_anchor_points: int = Field(default=DEFAULT_N_ANCHOR_POINTS, ge=0, description="Anchor reference points")
     artificial_missing_rate: float = Field(default=DEFAULT_ARTIFICIAL_MISSING_RATE, ge=0.0, le=1.0)
     scaler_type: ScalerType = ScalerType.STANDARD
-    missing_value_strategy: MissingValueStrategy = MissingValueStrategy.FORWARD_FILL
+    missing_value_strategy: MissingValueStrategy = MissingValueStrategy.NAN_KEEP
     cast_dtype: str = DEFAULT_CAST_DTYPE
     sliding_stride: int | None = Field(default=None, description="None=auto-compute based on data size")
     tasks: list[TaskType] = Field(default_factory=lambda: list(TaskType))

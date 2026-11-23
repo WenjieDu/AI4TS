@@ -5,265 +5,184 @@ Provides validation, inspection, and conversion of time-series data files.
 """
 
 # Created by Wenjie Du <wdu@time-series.ai>
-# License: Apache-2.0
-
-import os
-import sys
+# SPDX-License-Identifier: Apache-2.0
 
 import click
 
-
-def _check_data_protocols():
-    """Try to import data_protocols and return availability status."""
-    try:
-        from ..data_protocols.validation import validate_csv_file, validate_dataframe  # noqa: F401
-        return True
-    except ImportError:
-        return False
+from .merge import merge
+from .plan import data_plan
+from .profile import data_profile
+from .reshape import reshape
+from .temporal import temporal
+from .time_basis import time_basis
 
 
 @click.group()
 def data():
-    """Validate, inspect, and convert time-series data files."""
-    pass
+    """Inspect, plan, and prepare time-series data."""
 
 
 @data.command()
-@click.argument("file", type=click.Path(exists=True))
+@click.argument("file", type=click.Path(exists=True, dir_okay=False))
 def validate(file):
-    """Validate a CSV file against the AI4TS data protocol.
-
-    FILE is the path to a CSV file to validate.
-    """
-    try:
-        from ..data_protocols.validation import validate_csv_file, ValidationError
-    except ImportError:
-        click.echo(
-            click.style("Error: ", fg="red")
-            + "The data_protocols module is not installed. "
-            "Install it with: pip install ai4ts[data]"
-        )
-        sys.exit(1)
-
-    click.echo(f"Validating {click.style(file, bold=True)} ...")
+    """Check CSV protocol rules and report pass or fail."""
+    from ..data_protocols.validation import ValidationError, validate_csv_file, validate_dataframe
 
     try:
-        from ..data_protocols.validation import validate_dataframe
+        validate_dataframe(validate_csv_file(file))
+    except ValidationError as error:
+        raise click.ClickException(f"Validation failed: {error}") from error
 
-        df = validate_csv_file(file)
-        metadata = validate_dataframe(df)
-        click.echo(click.style("✓ Validation passed", fg="green", bold=True))
-        click.echo(f"  Samples  : {metadata.n_samples}")
-        click.echo(f"  Features : {metadata.n_features} numeric")
-        click.echo(f"  Missing  : {metadata.overall_missing_rate:.2%}")
-    except ValidationError as e:
-        click.echo(click.style("✗ Validation failed", fg="red", bold=True))
-        click.echo(f"  {e}")
-        sys.exit(1)
-    except Exception as e:
-        click.echo(click.style("✗ Error during validation", fg="red", bold=True))
-        click.echo(f"  {e}")
-        sys.exit(1)
+    click.echo("Validation passed.")
 
 
 @data.command()
-@click.argument("file", type=click.Path(exists=True))
+@click.argument("file", type=click.Path(exists=True, dir_okay=False))
 def inspect(file):
-    """Inspect data structure and display metadata.
-
-    FILE is the path to a CSV file to inspect.
-    """
-    try:
-        import pandas as pd
-    except ImportError:
-        click.echo(
-            click.style("Error: ", fg="red")
-            + "pandas is required for data inspection. "
-            "Install it with: pip install pandas"
-        )
-        sys.exit(1)
-
-    click.echo(f"Inspecting {click.style(file, bold=True)} ...\n")
+    """Report columns, inferred types, and missing cells in the source CSV."""
+    from ..data_protocols.constants import CLAF_TARGET_SYMBOL, COL_NAME_SAMPLE_ID, COL_NAME_TIMESTAMP
+    from ..data_protocols.validation import ValidationError, validate_csv_file
 
     try:
-        df = pd.read_csv(file)
-    except Exception as e:
-        click.echo(click.style("✗ Failed to read file", fg="red", bold=True))
-        click.echo(f"  {e}")
-        sys.exit(1)
+        frame = validate_csv_file(file)
+    except ValidationError as error:
+        raise click.ClickException(f"Inspection failed: {error}") from error
 
-    n_rows, n_cols = df.shape
-    missing_total = df.isnull().sum().sum()
-    missing_rate = missing_total / (n_rows * n_cols) if (n_rows * n_cols) > 0 else 0.0
+    rows, columns = frame.shape
+    counts = frame.isna().sum()
+    total = int(counts.sum())
+    targets = [column for column in frame.columns if CLAF_TARGET_SYMBOL in column]
 
-    # try to extract richer metadata from data_protocols
-    try:
-        from ..data_protocols.validation import validate_dataframe
-        from ..data_protocols.utils import ensure_sample_id, ensure_timestamp
+    click.echo(f"Dataset: {file}")
+    click.echo(f"  Rows          : {rows}")
+    click.echo(f"  Columns       : {columns}")
+    click.echo(f"  Has SAMPLE_ID : {COL_NAME_SAMPLE_ID in frame.columns}")
+    click.echo(f"  Has TIMESTAMP : {COL_NAME_TIMESTAMP in frame.columns}")
+    click.echo(f"  Has targets   : {bool(targets)}")
+    if targets:
+        click.echo(f"  Target cols   : {', '.join(targets)}")
+    click.echo(f"  Missing cells : {total}/{frame.size} ({total / frame.size:.2%}) across all columns")
 
-        df_proto = ensure_sample_id(df.copy())
-        df_proto = ensure_timestamp(df_proto)
-        metadata = validate_dataframe(df_proto)
-
-        click.echo(click.style("Dataset Overview", fg="cyan", bold=True))
-        click.echo(f"  File          : {file}")
-        click.echo(f"  Rows          : {n_rows}")
-        click.echo(f"  Columns       : {n_cols}")
-        click.echo(f"  Samples       : {metadata.n_samples}")
-        click.echo(f"  Numeric feats : {metadata.n_features}")
-        click.echo(f"  Has SAMPLE_ID : {metadata.has_sample_id}")
-        click.echo(f"  Has TIMESTAMP : {metadata.has_timestamp}")
-        click.echo(f"  Has targets   : {metadata.has_classification_target}")
-        click.echo(f"  Missing cells : {missing_total} ({metadata.overall_missing_rate:.2%})")
-        if metadata.classification_target_names:
-            click.echo(f"  Target cols   : {', '.join(metadata.classification_target_names)}")
-        click.echo()
-
-        click.echo(click.style("Column Details", fg="cyan", bold=True))
-        header = f"  {'Column':<30} {'Role':<20} {'Dtype':<12} {'Missing%':<10}"
-        click.echo(header)
-        click.echo("  " + "-" * (len(header) - 2))
-        for col_desc in metadata.columns:
-            col_missing = 0.0
-            if col_desc.role.value == "feature" and col_desc.has_missing:
-                col_missing = col_desc.missing_rate
-            click.echo(
-                f"  {col_desc.name:<30} {col_desc.role.value:<20} "
-                f"{(col_desc.dtype.value if col_desc.dtype else '-'):<12} {col_missing:<10.2%}"
-            )
-    except ImportError:
-        # Fallback: basic column info without data_protocols
-        click.echo(click.style("Dataset Overview", fg="cyan", bold=True))
-        click.echo(f"  File          : {file}")
-        click.echo(f"  Rows          : {n_rows}")
-        click.echo(f"  Columns       : {n_cols}")
-        click.echo(f"  Missing cells : {missing_total} ({missing_rate:.2%})")
-        click.echo()
-
-        click.echo(click.style("Column Details", fg="cyan", bold=True))
-        header = f"  {'Column':<30} {'Dtype':<12} {'Non-null':<10} {'Missing%':<10}"
-        click.echo(header)
-        click.echo("  " + "-" * (len(header) - 2))
-        for col in df.columns:
-            dtype = str(df[col].dtype)
-            non_null = df[col].notna().sum()
-            col_missing = df[col].isnull().sum() / n_rows if n_rows > 0 else 0.0
-            click.echo(f"  {col:<30} {dtype:<12} {non_null:<10} {col_missing:<10.2%}")
+    click.echo("\nColumn Details")
+    click.echo(f"  {'Column':<30} {'Inferred dtype':<15} {'Non-null':<10} Missing")
+    for name, dtype, missing in zip(frame.columns, frame.dtypes, counts):
+        click.echo(f"  {name:<30} {str(dtype):<15} {rows - missing:<10} {missing}/{rows} ({missing / rows:.2%})")
 
 
 @data.command()
-@click.argument("file", type=click.Path(exists=True))
+@click.argument("file", type=click.Path(exists=True, dir_okay=False))
 @click.option("--output", "-o", type=click.Path(), default=None, help="Output file path.")
 @click.option(
     "--format", "fmt", type=click.Choice(["csv", "npy"], case_sensitive=False),
     default=None, help="Target format (auto-detected from input if omitted)."
 )
-@click.option("--context-len", type=int, default=None, help="Context length for conversion.")
+@click.option(
+    "--mode",
+    type=click.Choice(["table", "samples"]),
+    help="2D table or 3D samples. CSV defaults to samples. NPY uses its stored dimensions by default.",
+)
+@click.option("--key", help="Array key to extract for NPZ input.")
+@click.option("--context-len", type=int, default=None, help="Context length for CSV in samples mode.")
 @click.option(
     "--scaler", type=click.Choice(["standard", "minmax", "none"], case_sensitive=False),
-    default="none", help="Scaler to apply during conversion."
+    default="none", help="Scaler for CSV in samples mode."
 )
-def convert(file, output, fmt, context_len, scaler):
-    """Convert between CSV and NumPy formats.
+@click.option(
+    "--missing-value-strategy",
+    type=click.Choice(["nan_keep", "forward_fill"]),
+    help="Missing-value handling for CSV in samples mode (default: nan_keep).",
+)
+def convert(file, output, fmt, mode, key, context_len, scaler, missing_value_strategy):
+    """Convert CSV and NPY data or extract a selected NPZ array to NPY."""
+    from pathlib import Path
 
-    FILE is the path to a .csv or .npy file.
-    """
-    ext = os.path.splitext(file)[1].lower()
+    source = Path(file)
+    ext = source.suffix.lower()
+    fmt = fmt or ("npy" if ext in (".csv", ".npz") else "csv")
+    if (ext, fmt) not in ((".csv", "npy"), (".npy", "csv"), (".npz", "npy")):
+        raise click.UsageError("Supported conversions: CSV to NPY, NPY to CSV, and NPZ to NPY.")
+    if ext == ".npz" and key is None:
+        raise click.UsageError("NPZ extraction requires --key.")
+    if ext != ".npz" and key is not None:
+        raise click.BadParameter("Only supported for NPZ extraction.", param_hint="--key")
+    sample_export = ext == ".csv" and mode != "table"
+    if not sample_export:
+        for option, supplied in (
+            ("--context-len", context_len is not None),
+            ("--scaler", scaler != "none"),
+            ("--missing-value-strategy", missing_value_strategy is not None),
+        ):
+            if supplied:
+                raise click.BadParameter("Only supported for CSV to NPY in samples mode.", param_hint=option)
 
-    # auto-detect target format
-    if fmt is None:
-        fmt = "npy" if ext == ".csv" else "csv"
-
-    try:
-        from ..data_protocols.conversion import TimeSeriesConverter
-        from ..data_protocols.schemas import ProcessingConfig
-        from ..data_protocols.enums import ScalerType
-    except ImportError:
-        # fallback to basic numpy/pandas conversion
-        click.echo(
-            click.style("Note: ", fg="yellow")
-            + "data_protocols not available, using basic conversion."
-        )
-        _basic_convert(file, output, fmt, ext)
-        return
-
-    # map scaler string to enum
-    scaler_map = {
-        "standard": ScalerType.STANDARD,
-        "minmax": ScalerType.MINMAX,
-        "none": ScalerType.NONE,
-    }
-    scaler_type = scaler_map.get(scaler, ScalerType.NONE)
-
-    config_kwargs = {"scaler_type": scaler_type}
-    if context_len is not None:
-        config_kwargs["ts_context_len"] = context_len
-
-    try:
-        proc_config = ProcessingConfig(**config_kwargs)
-        converter = TimeSeriesConverter(config=proc_config)
-
-        if ext == ".csv" and fmt == "npy":
-            import numpy as np
-
-            df, metadata = converter.from_csv(file)
-            result = converter.to_tensor_samples(training_mode=False)
-            out_path = output or os.path.splitext(file)[0] + ".npy"
-            np.save(out_path, result["X"])
-            click.echo(click.style("✓", fg="green") + f" Converted to {out_path}")
-            click.echo(f"  Shape: {result['X'].shape} (samples, timesteps, features)")
-        elif ext == ".npy" and fmt == "csv":
-            import numpy as np
-
-            arr = np.load(file)
-            if arr.ndim == 2:
-                import pandas as pd
-                out_df = pd.DataFrame(arr, columns=[f"feat_{i}" for i in range(arr.shape[1])])
-            elif arr.ndim == 3:
-                # 3D tensor: flatten samples back to DataFrame
-                converter_new = TimeSeriesConverter(config=proc_config)
-                out_df = converter_new.tensor_to_dataframe(arr, strip_anchors=False, strip_padding=False, inverse_scale=False)
-            else:
-                click.echo(click.style("Error: ", fg="red") + f"Unsupported array shape {arr.shape}.")
-                sys.exit(1)
-            out_path = output or os.path.splitext(file)[0] + ".csv"
-            out_df.to_csv(out_path, index=False)
-            click.echo(click.style("✓", fg="green") + f" Converted to {out_path}")
-        else:
-            click.echo(click.style("Error: ", fg="red") + f"Cannot convert {ext} to {fmt}.")
-            sys.exit(1)
-    except Exception as e:
-        click.echo(click.style("✗ Conversion failed", fg="red", bold=True))
-        click.echo(f"  {e}")
-        sys.exit(1)
-
-
-def _basic_convert(file, output, fmt, ext):
-    """Fallback conversion using only numpy and pandas."""
+    out_path = output or str(source.with_suffix(f".{fmt}"))
     try:
         import numpy as np
-        import pandas as pd
-    except ImportError as e:
-        click.echo(click.style("Error: ", fg="red") + f"Missing dependency: {e}")
-        sys.exit(1)
 
-    try:
-        if ext == ".csv" and fmt == "npy":
-            df = pd.read_csv(file)
-            arr = df.values
-            out_path = output or os.path.splitext(file)[0] + ".npy"
-            np.save(out_path, arr)
-        elif ext == ".npy" and fmt == "csv":
-            arr = np.load(file)
-            df = pd.DataFrame(arr)
-            out_path = output or os.path.splitext(file)[0] + ".csv"
-            df.to_csv(out_path, index=False)
+        if sample_export:
+            from ..data_protocols.conversion import TimeSeriesConverter
+            from ..data_protocols.schemas import ProcessingConfig
+
+            options = {"scaler_type": scaler}
+            if context_len is not None:
+                options["ts_context_len"] = context_len
+            if missing_value_strategy is not None:
+                options["missing_value_strategy"] = missing_value_strategy
+            converter = TimeSeriesConverter(ProcessingConfig(**options))
+            converter.from_csv(source)
+            array = converter.to_tensor_samples(training_mode=False)["X"]
+        elif ext == ".csv":
+            import pandas as pd
+
+            from ..data_protocols.constants import CLAF_TARGET_SYMBOL, RESERVED_COLUMNS
+
+            table = pd.read_csv(source)
+            if any(name in RESERVED_COLUMNS or CLAF_TARGET_SYMBOL in name for name in table.columns):
+                raise ValueError("Table mode requires feature columns only. Remove role columns or use samples mode.")
+            array = table.to_numpy()
+            if array.dtype.kind not in "biuf":
+                raise ValueError("Table mode requires numeric CSV columns.")
+        elif ext == ".npz":
+            with np.load(source, allow_pickle=False) as archive:
+                if key not in archive.files:
+                    raise ValueError(f"Array key {key!r} not found in NPZ. Available keys: {', '.join(archive.files)}")
+                array = archive[key]
         else:
-            click.echo(click.style("Error: ", fg="red") + f"Cannot convert {ext} to {fmt}.")
-            sys.exit(1)
+            array = np.load(source, allow_pickle=False)
 
-        click.echo(click.style("✓", fg="green") + f" Converted to {out_path}")
-    except Exception as e:
-        click.echo(click.style("✗ Conversion failed", fg="red", bold=True))
-        click.echo(f"  {e}")
-        sys.exit(1)
+        expected_rank = {"table": 2, "samples": 3}.get(mode)
+        if expected_rank is not None and array.ndim != expected_rank:
+            raise ValueError(f"{mode} mode requires {expected_rank} dimensions, got {array.ndim}.")
+
+        if fmt == "npy":
+            np.save(out_path, array, allow_pickle=False)
+        else:
+            if array.ndim == 2:
+                import pandas as pd
+
+                frame = pd.DataFrame(array, columns=[f"feat_{i}" for i in range(array.shape[1])])
+            elif array.ndim == 3:
+                from ..data_protocols.conversion import TimeSeriesConverter
+
+                frame = TimeSeriesConverter().tensor_to_dataframe(
+                    array, strip_anchors=False, strip_padding=False, inverse_scale=False
+                )
+            else:
+                raise ValueError(f"Unsupported array shape {array.shape}.")
+            frame.to_csv(out_path, index=False)
+    except ImportError as error:
+        raise click.ClickException(f"Conversion dependencies unavailable: {error}") from error
+    except Exception as error:
+        raise click.ClickException(f"Conversion failed: {error}") from error
+
+    click.echo(f"Converted to {out_path}")
+    if fmt == "npy":
+        click.echo(f"  Shape: {array.shape}")
+
+
+data.add_command(data_profile)
+data.add_command(data_plan)
+data.add_command(time_basis)
+data.add_command(temporal)
+data.add_command(reshape)
+data.add_command(merge)

@@ -2,6 +2,9 @@
 Tests for ai4ts.data_protocols.constants module.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 import pytest
 
 from ai4ts.data_protocols.constants import (

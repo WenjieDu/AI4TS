@@ -5,6 +5,9 @@ This subpackage defines the data formats, validation rules, and conversion utili
 used across all TimeSeries AI components (SDK, backend, model library).
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 from .constants import (
     COL_NAME_SAMPLE_ID,
     COL_NAME_SAMPLE_LABEL,
@@ -84,6 +87,7 @@ from .registry import (
 from .pipeline import (
     prepare_for_pypots,
     split_by_sample_id,
+    split_source_rows,
     reconstruct_from_predictions,
 )
 
@@ -117,5 +121,26 @@ __all__ = [
     # Registry
     "WindowEntry", "WindowRegistry",
     # Pipeline
-    "prepare_for_pypots", "split_by_sample_id", "reconstruct_from_predictions",
+    "prepare_for_pypots", "split_by_sample_id", "split_source_rows", "reconstruct_from_predictions",
 ]
+
+# Provider-free source-bound planning; preparation remains opt-in.
+from .ingestion import (
+    inspect_csv, create_ingestion_plan, validate_ingestion_plan,
+    render_ingestion_preview, verify_prepared_plan,
+)
+__all__ += ["inspect_csv", "create_ingestion_plan", "validate_ingestion_plan", "render_ingestion_preview", "verify_prepared_plan"]
+
+from .temporal_preprocessing import (
+    create_temporal_plan, validate_temporal_plan, run_temporal_preprocessing, inspect_temporal_result,
+)
+__all__ += ["create_temporal_plan", "validate_temporal_plan", "run_temporal_preprocessing", "inspect_temporal_result"]
+
+from .reshape import create_reshape_plan, validate_reshape_plan, run_reshape, inspect_reshape_result
+__all__ += ["create_reshape_plan", "validate_reshape_plan", "run_reshape", "inspect_reshape_result"]
+
+from .time_basis import preview_time_basis
+__all__ += ["preview_time_basis"]
+
+from .merge import create_merge_plan, validate_merge_plan, run_merge, inspect_merge_result
+__all__ += ["create_merge_plan", "validate_merge_plan", "run_merge", "inspect_merge_result"]

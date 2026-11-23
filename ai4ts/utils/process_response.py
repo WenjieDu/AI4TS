@@ -3,7 +3,7 @@ Utility functions for the ai4ts package.
 """
 
 # Created by Wenjie Du <wdu@time-series.ai>
-# License: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 import io
 import json

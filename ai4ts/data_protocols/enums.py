@@ -2,6 +2,9 @@
 Enumerations for the TimeSeries AI data protocol.
 """
 
+# Created by Wenjie Du <wdu@time-series.ai>
+# SPDX-License-Identifier: Apache-2.0
+
 from enum import Enum
 
 
@@ -12,6 +15,7 @@ class TaskType(str, Enum):
     CLASSIFICATION = "classification"
     ANOMALY_DETECTION = "anomaly_detection"
     CLUSTERING = "clustering"
+    REPRESENTATION = "representation"
 
 
 class FeatureType(str, Enum):
