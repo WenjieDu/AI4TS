@@ -44,11 +44,15 @@ keywords = [
     "incomplete time series",
 ]
 
+[project.scripts]
+ai4ts-cli = "ai4ts.cli:cli"
+
 [project.urls]
 Source = "https://github.com/WenjieDu/AI4TS"
 Homepage = "https://time-series.ai"
 
 [tool.setuptools.packages.find]
+include = ["ai4ts*"]
 exclude = [
     "*template",
     "*README.md",
@@ -60,6 +64,9 @@ exclude = [
 [tool.setuptools.dynamic]
 version = { attr = "ai4ts.version.__version__" }
 readme = { file = "README.md", content-type = "text/markdown" }
+dependencies = { file = "requirements/requirements.txt" }
+optional-dependencies.analysis = { file = "requirements/requirements_analysis.txt" }
+optional-dependencies.analysis-forecasting = { file = "requirements/requirements_analysis_forecasting.txt" }
 
 [tool.black]
 line-length = 120

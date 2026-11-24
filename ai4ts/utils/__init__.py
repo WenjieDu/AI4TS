@@ -1,18 +1,16 @@
-"""
-
-"""
+"""Shared utilities for API authentication, responses, and file validation."""
 
 # Created by Wenjie Du <wdu@time-series.ai>
-# License: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 from .apikey import determine_api_key
 from .file import check_file_size
 from .logging import logger
-from .process_response import check_response_code
+from .process_response import response_handler
 
 __all__ = [
     "logger",
-    "check_response_code",
+    "response_handler",
     "check_file_size",
     "determine_api_key",
 ]
