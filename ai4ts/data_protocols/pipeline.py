@@ -53,6 +53,7 @@ def prepare_for_pypots(
     feature_units: dict | None = None,
     unit_state: dict | None = None,
     ingestion_plan: dict | None = None,
+    covariates: dict | None = None,
 ) -> dict[str, Any]:
     """Convert a CSV file to PyPOTS-ready arrays with a window registry.
 
@@ -100,6 +101,9 @@ def prepare_for_pypots(
         Optional ready source-bound ingestion plan, checked against actual windows.
     unit_state : dict or None
         Optional saved training units to inherit/check for evaluation inputs.
+    covariates : dict or None
+        Forecasting-only mapping of selected non-target columns to role, kind,
+        and evidence. Omitted columns default to past numeric inputs.
 
     Returns
     -------
@@ -110,6 +114,8 @@ def prepare_for_pypots(
         - "registry": WindowRegistry
         - "profile": DataProfile
     """
+    if covariates is not None and task != "forecasting":
+        raise ValueError("Covariate declarations require forecasting")
     if ingestion_plan is not None:
         from .ingestion import validate_ingestion_plan, verify_prepared_plan
 
@@ -161,6 +167,7 @@ def prepare_for_pypots(
             target_features,
             feature_units,
             unit_state,
+            covariates,
         )
         if ingestion_plan is not None:
             verify_prepared_plan(ingestion_plan, set_type, result)

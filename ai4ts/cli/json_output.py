@@ -28,6 +28,17 @@ def emit_json_result(action):
         raise click.exceptions.Exit(code)
 
 
+class JsonCommand(click.Command):
+    """Keep option parsing failures in a standalone command's JSON contract."""
+
+    def parse_args(self, ctx, args):
+        try:
+            return super().parse_args(ctx, args)
+        except click.UsageError as error:
+            message = error.format_message()
+            emit_json_result(lambda: dict(status="failed", error=message))
+
+
 class JsonCommandGroup(click.Group):
     """Keep parsing failures in the command JSON contract."""
 

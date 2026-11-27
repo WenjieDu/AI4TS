@@ -101,6 +101,8 @@ class WindowRegistry:
     n_pred_steps: int = 0
     feature_semantics: dict | None = None
     feature_semantics_sha256: str = ""
+    covariates: dict | None = None
+    covariates_sha256: str = ""
 
     def add(self, entry: WindowEntry) -> None:
         """Add a window entry to the registry."""
@@ -162,6 +164,8 @@ class WindowRegistry:
         if self.feature_semantics is not None:
             result.update(feature_semantics=self.feature_semantics,
                           feature_semantics_sha256=self.feature_semantics_sha256)
+        if self.covariates is not None:
+            result.update(covariates=self.covariates, covariates_sha256=self.covariates_sha256)
         return result
 
     def to_json(self, path: str | Path) -> None:
@@ -196,6 +200,8 @@ class WindowRegistry:
                     "n_pred_steps",
                     "feature_semantics",
                     "feature_semantics_sha256",
+                    "covariates",
+                    "covariates_sha256",
                 )
                 if k in d
             },
@@ -211,6 +217,8 @@ class WindowRegistry:
                 raise ValueError("Incomplete registry feature semantics")
             validate_semantic_binding(d.get("feature_semantics"), d.get("feature_semantics_sha256"),
                                       reg.feature_columns, reg.source_sha256)
+        if ("covariates" in d or "covariates_sha256" in d) and d.get("covariates") is None:
+            raise ValueError("Incomplete registry covariate binding")
         for entry_dict in d.get("entries", []):
             reg.add(WindowEntry(**entry_dict))
         reg.validate_semantics()
@@ -247,11 +255,17 @@ class WindowRegistry:
         return result
 
     def validate_semantics(self) -> None:
-        """Check optional units while preserving legacy registry identities."""
-        from .semantics import validate_semantic_binding
+        """Check optional units and covariates while preserving legacy registry identities."""
+        from .semantics import validate_covariate_binding, validate_semantic_binding
 
         validate_semantic_binding(self.feature_semantics, self.feature_semantics_sha256 or None,
                                   self.feature_columns, self.source_sha256)
+        if self.covariates is not None or self.covariates_sha256:
+            if self.task_type != "forecasting":
+                raise ValueError("Covariate declarations require forecasting")
+            validate_covariate_binding(
+                self.covariates, self.covariates_sha256, self.feature_columns, self.target_features
+            )
 
     def validate_task_binding(self, source_csv, binding, task_state) -> None:
         """Check split-aware source, training state, and task-specific positions."""
@@ -272,6 +286,14 @@ class WindowRegistry:
             raise ValueError("Task prediction/source/state/registry binding mismatch")
         if self.preprocessing and state_sha256(task_state["scaler_state"]) != self.scaler_sha256:
             raise ValueError("Task scaler/registry binding mismatch")
+        if self.covariates is not None or task_state.get("covariates") is not None:
+            from .semantics import resolve_covariates
+
+            saved_covariates = task_state.get("covariates")
+            if saved_covariates is None:
+                saved_covariates = resolve_covariates(None, self.feature_columns, self.target_features)
+            if self.covariates != saved_covariates:
+                raise ValueError("Task covariate/registry binding mismatch")
         if task_state.get("feature_semantics") is not None:
             from .semantics import prepare_feature_semantics
 

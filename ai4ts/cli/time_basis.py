@@ -5,7 +5,7 @@
 
 import click
 
-from .json_output import emit_json_result
+from .json_output import JsonCommand, emit_json_result
 
 
 def selection_from_options(
@@ -79,18 +79,9 @@ def reducers_from_option(value):
     return dict(pairs)
 
 
-class _TimeCommand(click.Command):
-    def parse_args(self, ctx, args):
-        try:
-            return super().parse_args(ctx, args)
-        except click.UsageError as error:
-            message = error.format_message()
-            emit_json_result(lambda: dict(status="failed", error=message))
-
-
 @click.command(
     name="time-basis",
-    cls=_TimeCommand,
+    cls=JsonCommand,
     help="Preview one source's time facts and candidate grid; no data production",
 )
 @click.option("--input", "input_path", required=True, type=click.Path(exists=True, dir_okay=False))

@@ -76,6 +76,14 @@ The [PyPOTS bridge](pypots-bridge.md) explains how to pass the plan to PyPOTS.
 See [task data and exports](task-data-and-exports.md) for state, masks, and
 task-specific outputs.
 
+## Export inputs for a forecasting foundation model
+
+Use `data export-tsfm` to write raw-scale context and future CSVs and a
+source-bound manifest. Declare known-future covariates with evidence and
+provide their values for exactly the forecast horizon. Use absolute ISO 8601
+timestamps. Generated grids use the CSV protocol's limit of 10 million cells.
+See the declaration format, grid rules, and command example in [forecasting covariate roles](covariate-roles.md).
+
 ## Run a local analysis
 
 `analyze plan` records the analysis scope, method, and parameters. Use it for

@@ -9,6 +9,7 @@ Provides validation, inspection, and conversion of time-series data files.
 
 import click
 
+from .json_output import JsonCommand, emit_json_result
 from .merge import merge
 from .plan import data_plan
 from .profile import data_profile
@@ -178,6 +179,40 @@ def convert(file, output, fmt, mode, key, context_len, scaler, missing_value_str
     click.echo(f"Converted to {out_path}")
     if fmt == "npy":
         click.echo(f"  Shape: {array.shape}")
+
+
+@data.command("export-tsfm", cls=JsonCommand)
+@click.option("--input", "history", required=True, type=click.Path(exists=True, dir_okay=False))
+@click.option("--future", type=click.Path(exists=True, dir_okay=False))
+@click.option("--sample-id", required=True)
+@click.option("--timestamp", required=True)
+@click.option("--features", required=True, help="Comma-separated ordered context features, including targets.")
+@click.option("--targets", required=True, help="Comma-separated ordered target features.")
+@click.option("--n-pred-steps", required=True, type=int)
+@click.option("--frequency", help="Fixed cadence, inferred from history if omitted.")
+@click.option("--covariates", type=click.Path(exists=True, dir_okay=False))
+@click.option("--output", required=True, type=click.Path(file_okay=False))
+def export_tsfm(history, future, sample_id, timestamp, features, targets, n_pred_steps, frequency, covariates, output):
+    """Export raw-scale forecast context, future inputs, and a manifest."""
+
+    def action():
+        from ..data_protocols import export_tsfm_frames
+        from ..data_protocols.temporal_preprocessing import declaration
+
+        return export_tsfm_frames(
+            history,
+            output,
+            sample_id_col=sample_id,
+            timestamp_col=timestamp,
+            feature_columns=features.split(","),
+            target_features=targets.split(","),
+            n_pred_steps=n_pred_steps,
+            covariates=declaration(covariates) if covariates is not None else None,
+            future_csv=future,
+            frequency=frequency,
+        )
+
+    emit_json_result(action)
 
 
 data.add_command(data_profile)

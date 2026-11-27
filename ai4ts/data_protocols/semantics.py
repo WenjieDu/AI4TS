@@ -164,3 +164,53 @@ def validate_semantic_binding(state, digest, features=None, source_sha256=None):
     if state_sha256(state) != digest:
         raise ValueError("Feature semantics binding mismatch")
     return state
+
+
+def resolve_covariates(declaration, features, targets, *, saved=False):
+    """Check a declaration against the selected non-target features and fill explicit defaults."""
+    columns = [column for column in features if column not in targets]
+    if declaration is None and not saved:
+        declaration = {}
+    if not isinstance(declaration, dict):
+        raise ValueError("Covariates must be a mapping")
+    if set(declaration).difference(columns) or (saved and set(declaration) != set(columns)):
+        raise ValueError("Covariates must name selected non-target features")
+
+    resolved = {}
+    for column in columns:
+        default = {"role": "past", "kind": "numeric", "evidence": {"origin": "default"}}
+        if column not in declaration or (saved and declaration[column] == default):
+            resolved[column] = default
+            continue
+        item = declaration[column]
+        if not isinstance(item, dict) or not {"role", "kind"}.issubset(item):
+            raise ValueError(f"Covariate {column!r} requires role and kind")
+        if set(item) - {"role", "kind", "evidence"}:
+            raise ValueError(f"Unknown covariate fields for {column!r}")
+        role, kind = item["role"], item["kind"]
+        if role not in ("past", "known", "static"):
+            raise ValueError(f"Invalid covariate role for {column!r}")
+        if kind not in ("numeric", "categorical"):
+            raise ValueError(f"Invalid covariate kind for {column!r}")
+        resolved[column] = {"role": role, "kind": kind}
+        if role != "past" or "evidence" in item:
+            evidence = item.get("evidence")
+            if (
+                not isinstance(evidence, dict)
+                or set(evidence) != {"origin", "reference"}
+                or evidence["origin"] not in ("source", "user-confirmed")
+            ):
+                raise ValueError(f"Covariate {column!r} requires source or user-confirmed evidence")
+            try:
+                _label(evidence["reference"], 256)
+            except ValueError as error:
+                raise ValueError(f"Invalid covariate evidence reference for {column!r}") from error
+            resolved[column]["evidence"] = evidence.copy()
+    return resolved
+
+
+def validate_covariate_binding(covariates, digest, features, targets):
+    """Validate a stored complete covariate declaration and its canonical identity."""
+    resolve_covariates(covariates, features, targets, saved=True)
+    if state_sha256(covariates) != digest:
+        raise ValueError("Forecast covariate binding mismatch")
