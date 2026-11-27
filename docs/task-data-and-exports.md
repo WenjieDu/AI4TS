@@ -53,6 +53,11 @@ fits all observed training-split rows before forming history/future windows,
 as in BenchPOTS' forecast conversion. `transform_targets` selects corresponding
 training parameters in target order. Validation/test targets never fit scaling.
 
+New forecasting states order the targets first in `X`. The
+[forecasting covariate contract](covariate-roles.md#pypots-forecasting-inputs)
+defines the generated model columns, fitted encoding, and supplied future
+horizon.
+
 Single streams use chronological/declared observation order. Multiple streams
 use disjoint entities and chronological windows inside each entity (new-entity
 forecasting). Split row overlaps, partial/interleaved single-stream splits,

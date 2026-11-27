@@ -142,13 +142,14 @@ def _cadence(context, id_col, time_col, frequency):
 
 
 def _validate_static(context, id_col, roles):
+    entities = context[id_col] if id_col else np.zeros(len(context), dtype=int)
     for column, declaration in roles.items():
         if declaration["role"] != "static":
             continue
         values = context[column]
         if declaration["kind"] == "numeric":
             values = values.astype("string").map(Decimal, na_action="ignore")
-        counts = values.groupby(context[id_col], sort=False).nunique()
+        counts = values.groupby(entities, sort=False).nunique()
         conflicts = counts.index[counts.gt(1)]
         if len(conflicts):
             raise ValueError(f"Static covariate {column!r} must be constant within entity {conflicts[0]!r}")

@@ -12,9 +12,24 @@ import json
 import numpy as np
 import pandas as pd
 
+from .covariates import _validate_static
+from .forecast_inputs import (
+    categorical_columns,
+    entity_groups,
+    fit_categorical_encoding,
+    forecast_sample,
+    input_layout,
+    prepare_live_future,
+    validate_categorical_encoding,
+)
 from .preprocessing import fit_scaler, state_sha256, transform_values, validate_scaler
 from .registry import WindowEntry, WindowRegistry, file_sha256
-from .semantics import prepare_feature_semantics, resolve_covariates, validate_covariate_binding, validate_semantic_binding
+from .semantics import (
+    prepare_feature_semantics,
+    resolve_covariates,
+    validate_covariate_binding,
+    validate_semantic_binding,
+)
 
 
 def validate_task_state(state, task=None):
@@ -31,12 +46,14 @@ def validate_task_state(state, task=None):
     features = state.get("roles", {}).get("feature_cols", [])
     if not features or len(set(features)) != len(features):
         raise ValueError("Invalid task state feature order")
+    routed = "input_features" in state or "categorical_encoding" in state
+    categorical = categorical_columns(state.get("covariates")) if routed else []
     if type(state.get("window_size")) is not int or state["window_size"] < 1:
         raise ValueError("Invalid task state window")
     if state.get("preprocessing") not in (None, "standard-v1"):
         raise ValueError("Invalid task preprocessing")
     if state["preprocessing"]:
-        validate_scaler(state.get("scaler_state"), features)
+        validate_scaler(state.get("scaler_state"), [feature for feature in features if feature not in categorical])
     elif state.get("scaler_state") is not None:
         raise ValueError("Raw task state cannot contain scaler")
     if state["task"] == "classification" or (state["task"] == "representation" and state["roles"].get("label_col")):
@@ -65,6 +82,13 @@ def validate_task_state(state, task=None):
         validate_covariate_binding(
             state.get("covariates"), state.get("covariates_sha256"), features, state["target_features"]
         )
+    if routed:
+        if state["task"] != "forecasting" or "covariates" not in state:
+            raise ValueError("Forecast routing state requires a bound covariate declaration")
+        order = [name for name, _, _ in input_layout(features, targets, state["covariates"])]
+        if state.get("input_features") != order:
+            raise ValueError("Invalid forecast input feature order")
+        validate_categorical_encoding(state.get("categorical_encoding"), categorical, targets)
     for key in ("training_sha256", "training_source_sha256"):
         value = state.get(key, "")
         if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
@@ -115,6 +139,9 @@ def prepare_task(
     feature_units=None,
     unit_state=None,
     covariates=None,
+    future_csv=None,
+    frequency=None,
+    planned_input_width=None,
 ):
     """Prepare a confirmed task, fitting state exclusively for training."""
     from .pipeline import _read_source, _extract_samples, _transform, _inject_artificial_missing
@@ -123,6 +150,11 @@ def prepare_task(
         raise ValueError("Invalid task preprocessing or missing rate")
     if covariates is not None and task != "forecasting":
         raise ValueError("Covariate declarations require forecasting")
+    if (future_csv is not None or frequency is not None) and (task != "forecasting" or set_type != "full"):
+        raise ValueError("A future covariate CSV is only supported for full forecasting")
+    if frequency is not None and future_csv is None:
+        raise ValueError("A forecast frequency override requires a future covariate CSV")
+    routed = task == "forecasting" and (task_state is None or "input_features" in task_state)
     if task_state is not None:
         validate_task_state(task_state, task)
         if schema_mapping is None:
@@ -143,7 +175,11 @@ def prepare_task(
         unit_state = saved_units
     elif set_type != "train":
         raise ValueError("Classification/forecasting requires saved training task state for val/test/full")
-    source, profile = _read_source(csv_path, task, schema_mapping, allow_irregular)
+    declaration = task_state.get("covariates") if task_state is not None else covariates
+    categorical = categorical_columns(declaration) if routed else []
+    source, profile = _read_source(
+        csv_path, task, schema_mapping, allow_irregular or future_csv is not None, categorical
+    )
     df = source
     if row_indices is not None:
         if not row_indices or len(set(row_indices)) != len(row_indices) or not set(row_indices).issubset(source.index):
@@ -152,9 +188,12 @@ def prepare_task(
     schema = profile.schema_mapping
     roles = {k: getattr(schema, k) for k in ("sample_id_col", "timestamp_col", "label_col", "feature_cols")}
     features = roles["feature_cols"]
+    numeric = [feature for feature in features if feature not in categorical]
+    input_features = list(features)
+    future_groups, future_binding = {}, None
     semantics = prepare_feature_semantics(feature_units, features, file_sha256(csv_path), unit_state)
     id_col, label_col = roles["sample_id_col"], roles["label_col"]
-    if set_type == "train" and df[features].isna().all().any():
+    if set_type == "train" and df[numeric].isna().all().any():
         raise ValueError("Training features must contain observed values")
     if split_info:
         from .pipeline import validate_source_split
@@ -166,7 +205,8 @@ def prepare_task(
             raise ValueError("Classification requires confirmed sample and label roles")
         if label_col:
             labels = _labels(df, id_col, label_col)
-    samples, ids = _extract_samples(df, id_col, features)
+    if not routed:
+        samples, ids = _extract_samples(df, id_col, features)
     if task in ("classification", "clustering", "representation"):
         window_size = max(map(len, samples)) if window_size is None else window_size
         if any(len(s) > window_size for s in samples):
@@ -192,11 +232,32 @@ def prepare_task(
             if covariates is not None and resolved_covariates != saved_covariates:
                 raise ValueError("Covariates differ from the saved training declaration")
             resolved_covariates = saved_covariates
+        if routed:
+            layout = input_layout(features, target_features, resolved_covariates)
+            input_features = [name for name, _, _ in layout]
+            if planned_input_width is not None and len(input_features) != planned_input_width:
+                raise ValueError("Forecast input width differs from plan. Replan with the same covariate declaration")
+            static = [
+                i for i, (_, source_col, _) in enumerate(layout)
+                if resolved_covariates.get(source_col, {}).get("role") == "static"
+            ]
+            leads = any(name != source_col and target is None for name, source_col, target in layout)
+            if leads and window_size < n_pred_steps:
+                raise ValueError("A lead window must be at least as long as the forecast horizon")
+            if leads and set_type == "full" and future_csv is None:
+                raise ValueError("Full forecasting with numeric known covariates requires a future covariate CSV")
+            _validate_static(source, id_col, resolved_covariates)
+            if future_csv is not None:
+                future_groups, future_binding = prepare_live_future(
+                    df, roles, target_features, n_pred_steps, resolved_covariates, future_csv, frequency
+                )
+        elif future_csv is not None:
+            raise ValueError("Refit legacy forecasting state before supplying future covariates")
     training_rows = (split_info or {}).get("rows", {}).get("train")
     training = df if set_type == "train" else source.loc[source.index.isin(training_rows)] if training_rows else None
     if task_state is None:
         if preprocessing:
-            fitted = fit_scaler(df[features].to_numpy(), features)
+            fitted = fit_scaler(df[numeric].to_numpy(), numeric)
             if scaler_state is not None and scaler_state != fitted:
                 raise ValueError("Provided scaler differs from training observations")
             scaler_state = fitted
@@ -223,6 +284,10 @@ def prepare_task(
                 covariates=resolved_covariates,
                 covariates_sha256=state_sha256(resolved_covariates),
             )
+            task_state.update(
+                input_features=input_features,
+                categorical_encoding=fit_categorical_encoding(df, id_col, categorical, target_features),
+            )
     validate_task_state(task_state, task)
     if roles != task_state["roles"] or window_size != task_state["window_size"]:
         raise ValueError("Task state feature/role/window mismatch")
@@ -241,8 +306,9 @@ def prepare_task(
             raise ValueError("Unknown class outside training mapping")
     if preprocessing:
         df = df.copy()
-        df[features] = transform_values(df[features].to_numpy(), scaler_state)
-        samples, ids = _extract_samples(df, id_col, features)
+        df[numeric] = transform_values(df[numeric].to_numpy(), scaler_state)
+        if not routed:
+            samples, ids = _extract_samples(df, id_col, features)
     source_rows = {sid: list(g.index) for sid, g in df.groupby(id_col, sort=True)} if id_col else {0: list(df.index)}
     original_rows = (
         {sid: list(g.index) for sid, g in source.groupby(id_col, sort=True)} if id_col else {0: list(source.index)}
@@ -270,10 +336,22 @@ def prepare_task(
     else:
         registry = WindowRegistry(window_size=window_size, strategy="forecast_sliding")
         history, future = [], []
-        indices = [features.index(c) for c in target_features]
+        indices = [input_features.index(c) for c in target_features]
+        minimum = window_size + (0 if set_type == "full" else n_pred_steps)
+        if any(len(rows) < minimum for rows in source_rows.values()):
+            raise ValueError("Sample too short for history and future within its split")
+        if routed:
+            samples, ids = [], []
+            for sid, group in entity_groups(df, id_col):
+                positions = [original_positions[sid][row] for row in group.index]
+                if leads and positions[-1] - positions[0] + 1 != len(positions):
+                    raise ValueError("Forecast lead rows must be contiguous within each entity and split")
+                samples.append(forecast_sample(
+                    group, sid, layout, resolved_covariates, n_pred_steps, task_state["categorical_encoding"],
+                    scaler_state, future_groups.get(sid),
+                ))
+                ids.append(sid)
         for sample, sid in zip(samples, ids):
-            if len(sample) < window_size + (0 if set_type == "full" else n_pred_steps):
-                raise ValueError("Sample too short for history and future within its split")
             starts = list(range(len(sample) - window_size - n_pred_steps + 1))
             if set_type == "full":
                 starts.append(len(sample) - window_size)
@@ -290,7 +368,11 @@ def prepare_task(
                     forecast_origin=original_positions[sid][source_rows[sid][end - 1]],
                 )
                 registry.add(entry)
-                history.append(sample[start:end])
+                window = sample[start:end]
+                if routed and static:
+                    window = window.copy()
+                    window[:, static] = sample[end - 1, static]
+                history.append(window)
                 target = np.full((n_pred_steps, len(indices)), np.nan)
                 target[: len(target_rows)] = sample[end : end + len(target_rows), indices]
                 future.append(target)
@@ -298,17 +380,22 @@ def prepare_task(
         registry.target_features, registry.n_pred_steps = list(target_features), n_pred_steps
         registry.covariates = copy.deepcopy(resolved_covariates)
         registry.covariates_sha256 = state_sha256(resolved_covariates)
-    registry.n_features, registry.task_type, registry.format_version = len(features), task, 2
+    registry.n_features, registry.task_type, registry.format_version = len(input_features), task, 2
     registry.source_sha256, registry.source_row_count = file_sha256(csv_path), len(source)
-    registry.columns, registry.column_roles, registry.feature_columns = list(df.columns), roles, list(features)
+    registry.columns, registry.column_roles, registry.feature_columns = list(df.columns), roles, input_features
     if semantics is not None:
         registry.feature_semantics, registry.feature_semantics_sha256 = semantics, state_sha256(semantics)
     registry.ordering = "timestamp" if schema.timestamp_col else "row_order"
     registry.split_info = dict(split_info or {}, role=set_type)
+    registry.split_info.pop("future_covariates", None)
+    if future_binding is not None:
+        registry.split_info["future_covariates"] = future_binding
     if "rows" not in registry.split_info:
         registry.split_info["rows"] = {set_type: list(df.index)}
     registry.split_info["time_basis"] = (
-        "regular_timestamp" if schema.timestamp_col and not allow_irregular else "observation_index"
+        "regular_timestamp"
+        if future_binding is not None or (schema.timestamp_col and not allow_irregular)
+        else "observation_index"
     )
     registry.task_state_sha256 = state_sha256(task_state)
     if preprocessing:
@@ -437,8 +524,10 @@ def export_forecasts(predictions, registry, source_csv, binding, task_state):
         raise ValueError("Invalid bound future predictions")
     if task_state["preprocessing"]:
         values = transform_targets(values, task_state["scaler_state"], registry.target_features, inverse=True)
-    source, _ = _read_source(source_csv, "forecasting", task_state["roles"], True)
+    categorical = categorical_columns(task_state.get("covariates")) if "input_features" in task_state else []
+    source, _ = _read_source(source_csv, "forecasting", task_state["roles"], True, categorical)
     ts_col, id_col = registry.column_roles["timestamp_col"], registry.column_roles["sample_id_col"]
+    live_times = registry.split_info.get("future_covariates", {}).get("timestamps", {})
     records = []
     for i, e in enumerate(registry.entries):
         frequency = None
@@ -452,7 +541,10 @@ def export_forecasts(predictions, registry, source_csv, binding, task_state):
         for h in range(registry.n_pred_steps):
             row = e.target_row_indices[h] if h < len(e.target_row_indices) else None
             future_time = source.at[row, ts_col] if row is not None and ts_col else None
-            if row is None and frequency is not None:
+            supplied_time = row is None and str(e.original_sample_id) in live_times
+            if supplied_time:
+                future_time = live_times[str(e.original_sample_id)][h]
+            elif row is None and frequency is not None:
                 future_time = (pd.Timestamp(origin_time) + (h + 1) * frequency).isoformat()
             for j, target in enumerate(registry.target_features):
                 truth = source.at[row, target] if row is not None else np.nan
@@ -466,7 +558,9 @@ def export_forecasts(predictions, registry, source_csv, binding, task_state):
                         "target_source_row": row,
                         "origin_time": origin_time,
                         "target_time": future_time,
-                        "time_basis": "regular_timestamp" if frequency is not None else "observation_index",
+                        "time_basis": (
+                            "regular_timestamp" if live_times or frequency is not None else "observation_index"
+                        ),
                         "target": target,
                         "prediction": float(values[i, h, j]),
                         "truth": float(truth) if np.isfinite(truth) else None,

@@ -119,7 +119,8 @@ def test_forecast_targets_split_order_benchpots_and_live_future(tmp_path):
     ref = convert_processed_dataset_by_task_type(
         ref_data, task_type="forecasting", n_pred_steps=2, forecast_feature_indices=[2, 0]
     )
-    np.testing.assert_allclose(train["X"][0], ref["train_X"][0])
+    assert train["registry"].feature_columns == ["c", "a", "b"]
+    np.testing.assert_allclose(train["X"][0], ref["train_X"][0][:, [2, 0, 1]])
     np.testing.assert_allclose(train["X_pred"][0], ref["train_X_pred"][0])
     live = prepare_for_pypots(source, set_type="full", task_state=state, **options)
     assert not live["X_pred_valid_mask"][-1].any() and np.isnan(live["X_pred"][-1]).all()

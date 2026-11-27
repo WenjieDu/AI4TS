@@ -91,10 +91,27 @@ class DataProfile:
         )
 
 
+def _parse_feature_values(df, csv_path, roles, features, categorical):
+    """Preserve literal IDs and labels while retaining the numeric CSV defaults."""
+    columns = [column for column in features if column in categorical]
+    strings = roles + columns
+    if strings:
+        df[strings] = pd.read_csv(
+            csv_path, usecols=strings, dtype=str, keep_default_na=False, engine="python" if columns else "c"
+        )[strings]
+    if columns:
+        df[columns] = df[columns].replace("", np.nan)
+    numeric = [column for column in features if column not in categorical]
+    df[numeric] = df[numeric].apply(pd.to_numeric, errors="raise")
+    return numeric
+
+
 def analyze_dataset(
     csv_path: str | Path,
     task_type: str | None = None,
     schema_mapping: SchemaMapping | dict | None = None,
+    *,
+    categorical_columns: tuple[str, ...] = (),
 ) -> DataProfile:
     """Analyze a CSV file and produce a DataProfile.
 
@@ -106,7 +123,9 @@ def analyze_dataset(
         Optional task type hint (imputation, classification, forecasting, clustering,
         anomaly_detection). If None, auto-detected from presence of CLAF_TARGET columns.
     schema_mapping : SchemaMapping or dict or None
-        Confirmed column roles. Only feature columns are converted to numeric.
+        Confirmed column roles.
+    categorical_columns : tuple of str
+        Explicit categorical features. Keep literal labels and missing cells.
 
     Returns
     -------
@@ -133,7 +152,10 @@ def analyze_dataset(
             break
 
     reserved = RESERVED_COLUMNS | ({label_col} if label_col else set())
-    feature_cols = [c for c in df.columns if c not in reserved and pd.api.types.is_numeric_dtype(df[c])]
+    feature_cols = [
+        c for c in df.columns
+        if c not in reserved and (c in categorical_columns or pd.api.types.is_numeric_dtype(df[c]))
+    ]
     if schema_mapping is not None:
         schema = SchemaMapping(**schema_mapping) if isinstance(schema_mapping, dict) else schema_mapping
         sample_id_col, timestamp_col, label_col = schema.sample_id_col, schema.timestamp_col, schema.label_col
@@ -142,10 +164,7 @@ def analyze_dataset(
     selected = roles + feature_cols
     if len(set(selected)) != len(selected) or not set(selected).issubset(df.columns) or not feature_cols:
         raise ValueError("Column roles must be distinct, present, and include numeric features")
-    # Identifiers such as 001 or NA are strings; only features use default NA parsing.
-    if roles:
-        df[roles] = pd.read_csv(csv_path, usecols=roles, dtype=str, keep_default_na=False)[roles]
-    df[feature_cols] = df[feature_cols].apply(pd.to_numeric, errors="raise")
+    _parse_feature_values(df, csv_path, roles, feature_cols, categorical_columns)
 
     # Compute per-sample lengths
     if sample_id_col and sample_id_col in df.columns:
