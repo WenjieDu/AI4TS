@@ -43,9 +43,11 @@ means all observed values are equal. `one_signed` means the feature has no mix
 of strictly positive and strictly negative observations. Zero is compatible
 with either sign.
 
-`leading_missing` lists `{entity, count}` entries in entity ID order. `count`
-is the number of consecutive missing rows before the first finite observation,
-or the entity's full row count if it has no finite observations. `longest_gap`
+`leading_missing` reports `{length, entity, n_entities}`: the largest number of
+consecutive missing rows before an entity's first finite observation (the full
+row count if the entity has none), the first entity ID with that length, and
+how many entities start with a missing row. Both summaries stay the same size
+regardless of the entity count. `longest_gap`
 reports `{length, entity}` for the longest missing run bounded by finite
 observations in the same entity. Positive ties use the first entity ID in
 lexicographic order. A feature with observations and no internal gap has

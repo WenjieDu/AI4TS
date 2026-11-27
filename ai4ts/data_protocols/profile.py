@@ -121,11 +121,15 @@ def _feature_value_domain(values: np.ndarray, entity_rows: dict[str | None, np.n
             "reason": "no_finite_observations",
         }
 
-    leading_missing = []
+    # Bounded summary: profiles must stay small for agents even with many entities.
+    leading_missing = {"length": 0, "entity": None, "n_entities": 0}
     longest_gap = {"length": 0, "entity": None}
     for entity, rows in entity_rows.items():
         positions = np.flatnonzero(finite[rows])
-        leading_missing.append({"entity": entity, "count": int(positions[0]) if positions.size else len(rows)})
+        lead = int(positions[0]) if positions.size else len(rows)
+        leading_missing["n_entities"] += lead > 0
+        if lead > leading_missing["length"]:
+            leading_missing.update(length=lead, entity=entity)
         # Only runs bounded by two finite observations count as internal gaps.
         gap_length = int(np.diff(positions).max(initial=1)) - 1
         if gap_length > longest_gap["length"]:

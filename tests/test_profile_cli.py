@@ -93,11 +93,7 @@ def test_profile_json_reports_finite_value_domains_and_gaps_by_entity(tmp_path):
         "integer_valued": True,
         "constant": False,
         "one_signed": True,
-        "leading_missing": [
-            {"entity": "001", "count": 1},
-            {"entity": "NA", "count": 0},
-            {"entity": "empty", "count": 2},
-        ],
+        "leading_missing": {"length": 2, "entity": "empty", "n_entities": 2},
         "longest_gap": {"length": 2, "entity": "NA"},
     }
     assert domains["negative"] == {
@@ -105,11 +101,7 @@ def test_profile_json_reports_finite_value_domains_and_gaps_by_entity(tmp_path):
         "integer_valued": False,
         "constant": True,
         "one_signed": True,
-        "leading_missing": [
-            {"entity": "001", "count": 0},
-            {"entity": "NA", "count": 0},
-            {"entity": "empty", "count": 0},
-        ],
+        "leading_missing": {"length": 0, "entity": None, "n_entities": 0},
         "longest_gap": {"length": 0, "entity": None},
     }
     assert domains["mixed"]["one_signed"] is False
@@ -139,7 +131,7 @@ def test_profile_orders_gaps_by_confirmed_time_within_each_entity(tmp_path):
             "integer_valued": True,
             "constant": False,
             "one_signed": True,
-            "leading_missing": [{"entity": "A", "count": 0}, {"entity": "B", "count": 0}],
+            "leading_missing": {"length": 0, "entity": None, "n_entities": 0},
             "longest_gap": {"length": 1, "entity": "A"},
         }
     }
@@ -163,7 +155,7 @@ def test_profile_reports_implicit_entity_and_preserves_integer_precision(tmp_pat
         "integer_valued": True,
         "constant": True,
         "one_signed": True,
-        "leading_missing": [{"entity": None, "count": 1}],
+        "leading_missing": {"length": 1, "entity": None, "n_entities": 1},
         "longest_gap": {"length": 1, "entity": None},
     }
     assert domains["wide"]["integer_valued"] is True
