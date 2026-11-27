@@ -35,6 +35,30 @@ For multiple entities, pass their identifier with `--sample-id` to `time-basis`.
 [time representation](time-basis.md) and [feature units](feature-units.md) for
 explicit time and unit declarations.
 
+`data profile --json` reports observed value-domain facts for each numeric
+feature in `dataset_stats.per_feature_value_domain`. The flags use only finite
+observations. `nonnegative` means every observed value is at least zero,
+`integer_valued` means every observed value is exactly integral, and `constant`
+means all observed values are equal. `one_signed` means the feature has no mix
+of strictly positive and strictly negative observations. Zero is compatible
+with either sign.
+
+`leading_missing` lists `{entity, count}` entries in entity ID order. `count`
+is the number of consecutive missing rows before the first finite observation,
+or the entity's full row count if it has no finite observations. `longest_gap`
+reports `{length, entity}` for the longest missing run bounded by finite
+observations in the same entity. Positive ties use the first entity ID in
+lexicographic order. A feature with observations and no internal gap has
+`length: 0` and `entity: null`. Without `SAMPLE_ID`, the source is one entity
+with `entity: null`. Counts use rows in stable `TIMESTAMP` order when every
+timestamp parses and is present, and CSV row order otherwise. Empty cells,
+NaN, and infinities count as missing for these two fields. For a feature with
+no finite observations, all six facts are `null` and `reason` is
+`"no_finite_observations"`.
+
+These facts describe the input as observed and can inform downstream prediction
+checks. Profiling leaves source values intact.
+
 For numeric format conversion, use `data convert measurements.csv --mode table
 -o measurements.npy` to preserve 2D row and column order. CSV defaults to
 `samples` mode for 3D arrays. Missing values stay NaN unless a strategy such

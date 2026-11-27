@@ -35,6 +35,7 @@ class DatasetStats:
     avg_sample_length: float = 0.0
     has_variable_length: bool = False
     per_feature_missing_rate: dict[str, float] = field(default_factory=dict)
+    per_feature_value_domain: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass
@@ -64,7 +65,7 @@ class DataProfile:
     """Complete profile of a time series dataset for agent consumption.
 
     This lightweight JSON structure tells the agent everything it needs to know
-    about the dataset without exposing individual sample data.
+    about the dataset without exposing individual feature values.
     """
 
     dataset_stats: DatasetStats = field(default_factory=DatasetStats)
@@ -104,6 +105,41 @@ def _parse_feature_values(df, csv_path, roles, features, categorical):
     numeric = [column for column in features if column not in categorical]
     df[numeric] = df[numeric].apply(pd.to_numeric, errors="raise")
     return numeric
+
+
+def _feature_value_domain(values: np.ndarray, entity_rows: dict[str | None, np.ndarray]) -> dict[str, Any]:
+    finite = np.isfinite(values)
+    observed = values[finite]
+    if not observed.size:
+        return {
+            "nonnegative": None,
+            "integer_valued": None,
+            "constant": None,
+            "one_signed": None,
+            "leading_missing": None,
+            "longest_gap": None,
+            "reason": "no_finite_observations",
+        }
+
+    leading_missing = []
+    longest_gap = {"length": 0, "entity": None}
+    for entity, rows in entity_rows.items():
+        positions = np.flatnonzero(finite[rows])
+        leading_missing.append({"entity": entity, "count": int(positions[0]) if positions.size else len(rows)})
+        # Only runs bounded by two finite observations count as internal gaps.
+        gap_length = int(np.diff(positions).max(initial=1)) - 1
+        if gap_length > longest_gap["length"]:
+            longest_gap = {"length": gap_length, "entity": entity}
+
+    smallest, largest = observed.min(), observed.max()
+    return {
+        "nonnegative": bool(smallest >= 0),
+        "integer_valued": values.dtype.kind in "biu" or bool((observed == np.trunc(observed)).all()),
+        "constant": bool(smallest == largest),
+        "one_signed": bool(smallest >= 0 or largest <= 0),
+        "leading_missing": leading_missing,
+        "longest_gap": longest_gap,
+    }
 
 
 def analyze_dataset(
@@ -164,14 +200,14 @@ def analyze_dataset(
     selected = roles + feature_cols
     if len(set(selected)) != len(selected) or not set(selected).issubset(df.columns) or not feature_cols:
         raise ValueError("Column roles must be distinct, present, and include numeric features")
-    _parse_feature_values(df, csv_path, roles, feature_cols, categorical_columns)
+    numeric_cols = _parse_feature_values(df, csv_path, roles, feature_cols, categorical_columns)
 
     # Compute per-sample lengths
     if sample_id_col and sample_id_col in df.columns:
-        groups = df.groupby(sample_id_col, sort=True)
-        lengths = groups.size().values.tolist()
+        entity_rows = df.groupby(sample_id_col, sort=True).indices
     else:
-        lengths = [len(df)]
+        entity_rows = {None: df.index.to_numpy()}
+    lengths = [len(rows) for rows in entity_rows.values()]
 
     n_samples = len(lengths)
     min_len = int(min(lengths))
@@ -193,10 +229,9 @@ def analyze_dataset(
     if task_type is None:
         task_type = "classification" if label_col else "imputation"
 
-    # Timestamp regularity check
     ts_info = TimestampInfo(has_timestamp=timestamp_col is not None)
     if timestamp_col and timestamp_col in df.columns:
-        ts_info = _check_timestamp_regularity(df, sample_id_col, timestamp_col)
+        ts_info, entity_rows = _profile_timestamps(df, entity_rows, timestamp_col)
 
     return DataProfile(
         dataset_stats=DatasetStats(
@@ -209,6 +244,9 @@ def analyze_dataset(
             avg_sample_length=round(avg_len, 2),
             has_variable_length=has_variable_length,
             per_feature_missing_rate=per_feature_missing_rate,
+            per_feature_value_domain={
+                column: _feature_value_domain(df[column].to_numpy(), entity_rows) for column in numeric_cols
+            },
         ),
         schema_mapping=SchemaMapping(
             sample_id_col=sample_id_col,
@@ -223,28 +261,28 @@ def analyze_dataset(
     )
 
 
-def _check_timestamp_regularity(
+def _profile_timestamps(
     df: pd.DataFrame,
-    sample_id_col: str | None,
+    entity_rows: dict[str | None, np.ndarray],
     timestamp_col: str,
-) -> TimestampInfo:
-    """Check whether timestamps have a regular frequency.
-
-    If step variance > 0, the data has irregular sampling and the profile
-    includes a warning message for the agent.
-    """
+) -> tuple[TimestampInfo, dict[str | None, np.ndarray]]:
+    """Summarize timestamp spacing and return chronological rows when timestamps are complete."""
     info = TimestampInfo(has_timestamp=True)
 
     try:
         ts = pd.to_datetime(df[timestamp_col], format="mixed", utc=True)
     except Exception:
         info.warning = f"Could not parse '{timestamp_col}' as datetime."
-        return info
+        return info, entity_rows
 
-    groups = df.groupby(sample_id_col, sort=False).groups.values() if sample_id_col else [df.index]
-    diffs = pd.concat([ts.loc[index].sort_values().diff().dropna() for index in groups]).dt.total_seconds()
+    ordered_rows = {
+        entity: ts.iloc[rows].sort_values(kind="stable").index.to_numpy() for entity, rows in entity_rows.items()
+    }
+    diffs = pd.concat([ts.iloc[rows].diff().dropna() for rows in ordered_rows.values()]).dt.total_seconds()
+    if ts.notna().all():
+        entity_rows = ordered_rows
     if len(diffs) == 0:
-        return info
+        return info, entity_rows
 
     median_step = float(diffs.median())
     variance = float(diffs.var(ddof=0))
@@ -260,4 +298,4 @@ def _check_timestamp_regularity(
             f"model training. Proceed with caution or ask the user to preprocess."
         )
 
-    return info
+    return info, entity_rows
