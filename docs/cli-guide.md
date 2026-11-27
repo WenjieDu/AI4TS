@@ -80,8 +80,11 @@ task-specific outputs.
 
 Use `data export-tsfm` to write raw-scale context and future CSVs and a
 source-bound manifest. Declare known-future covariates with evidence and
-provide their values for exactly the forecast horizon. Use absolute ISO 8601
-timestamps. Generated grids use the CSV protocol's limit of 10 million cells.
+provide their values for exactly the forecast horizon. Numeric and categorical
+static covariates must be constant within each entity wherever observed.
+Use absolute ISO 8601 timestamps. The forecast grid accepts fixed and calendar
+offsets such as `1h`, `MS`, and `W-MON`. Omit `--sample-id` to generate
+an entity ID for a single series. Generated grids use the 10 million cell limit.
 See the declaration format, grid rules, and command example in [forecasting covariate roles](covariate-roles.md).
 
 ## Run a local analysis

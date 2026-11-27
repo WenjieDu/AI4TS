@@ -51,7 +51,7 @@ def export_tsfm_frames(
     history_csv: str | Path,
     output: str | Path,
     *,
-    sample_id_col: str,
+    sample_id_col: str | None = None,
     timestamp_col: str,
     feature_columns: list[str],
     target_features: list[str],
@@ -66,7 +66,7 @@ def validate_future_covariates(
     history: pd.DataFrame,
     future: pd.DataFrame | None,
     *,
-    sample_id_col: str,
+    sample_id_col: str | None = None,
     timestamp_col: str,
     feature_columns: list[str],
     target_features: list[str],
@@ -83,6 +83,11 @@ the entity identifier and timestamp, followed by the selected features in
 order. The returned future frame uses the same two leading columns, followed by
 the declared known columns in feature order. The input frames are unchanged.
 
+Omit `sample_id_col` or pass `None` when the inputs describe a single series
+without an entity column. Both outputs use the string entity ID `"0"` in a
+generated `item_id` column. AI4TS appends underscores if needed to avoid
+colliding with a history column.
+
 For forecasting preparation, pass the same optional `covariates` keyword to
 `prepare_for_pypots(..., task="forecasting", covariates=...)`. The resolved
 mapping and its SHA-256 are recorded as `covariates` and `covariates_sha256` in
@@ -96,29 +101,37 @@ array routing change.
 
 ## History and future validation
 
-1. Provide nonempty history with distinct entity and timestamp columns and
-   unique, nonempty column names. Identifiers are nonempty strings. CSV input
-   preserves identifiers such as `001`. Timestamps are parsed as UTC, with
-   timezone-naive values interpreted as UTC. Numeric epochs require upstream
-   conversion. Column names and entity strings are case-sensitive.
+1. Provide nonempty history with unique, nonempty column names and a
+   timestamp column. If supplied, the entity column must be distinct and
+   contain nonempty strings. CSV preserves identifiers such as `001`.
+   Use absolute ISO 8601 timestamps. Naive timestamps are interpreted as
+   UTC. Numeric epochs require upstream conversion. Column names and entity
+   strings are case-sensitive.
 2. History must have unique timestamps within each entity and a common regular
-   fixed-duration cadence. Supply a positive `frequency` such as `"5min"`, or
-   let AI4TS infer it from the observed within-entity intervals. Supply a
-   cadence explicitly if every entity has only one history row. Unordered rows
-   are sorted by entity and timestamp after validation.
+   cadence. Supply a positive pandas offset alias such as `"5min"`, `"MS"`,
+   `"QE"`, `"W-MON"` or `"B"`, or let AI4TS infer it with `pd.infer_freq`
+   from each entity with at least three observations. Inferred offsets must
+   agree and all entities must follow the resulting grid. If no entity has
+   three observations, matching two-point intervals can establish a fixed
+   cadence. Supply an explicit offset to use a calendar rule in that case
+   or when all entities are singletons. Unordered rows are sorted by entity
+   and timestamp.
 3. A future table is required when any covariate has role `known`. Its columns
-   must be exactly the identifier, timestamp, and all declared known
+   must be exactly the timestamp, any declared identifier, and all known
    covariates. Targets, past and static covariates, and columns absent from
-   history are rejected. If there are no known covariates and no future table,
-   AI4TS generates the entity and timestamp rows.
+   history are rejected. If there are no known covariates and no future
+   table, AI4TS generates the entity and timestamp rows.
 4. The future table must cover the same entities as history and contain exactly
    `n_pred_steps` unique timestamps per entity. The horizon must be a positive
    integer. For each entity the future timestamps must equal the next
-   consecutive grid points after its final history timestamp.
+   consecutive grid points after its final history timestamp, calculated
+   as `last_timestamp + k * offset` for each step `k` starting at one.
 5. Selected numeric columns and targets must contain numbers or missing values.
    Infinities are rejected. Blank cells are missing, and numeric `NaN` and
    `nan` tokens are also missing. Category text is preserved. Missing cells
    stay missing, including in declared known columns.
+6. A static covariate's nonmissing values must agree within each entity.
+   Different entities may have different values. Missing cells are preserved.
 
 An invalid declaration or table raises `ValueError` with the failed check.
 
@@ -135,14 +148,16 @@ no imputation, scaling, aggregation, or categorical encoding.
 | `sample_id_col`, `timestamp_col` | Entity and timestamp column names |
 | `feature_columns`, `target_features` | Ordered context features and targets |
 | `covariates`, `covariates_sha256` | Resolved roles, kinds, and evidence, plus the canonical declaration hash |
-| `n_pred_steps`, `frequency` | Horizon and normalized fixed duration |
+| `n_pred_steps`, `frequency` | Horizon and normalized offset alias, such as `1h` or `MS` |
 | `time_basis`, `timezone` | `regular_timestamp` and `UTC` |
 | `source_sha256`, `future_source_sha256` | History and future CSV hashes. The second is null for a generated grid |
 | `files` | SHA-256 of each output CSV, keyed by filename |
 | `consequences` | List of output effects |
 
 The consequences record zero dropped rows, unselected context columns, UTC
-ordering, and future grid generation when applicable.
+ordering, and future grid generation when applicable. For a single series
+without an entity column, `generated_entity_id` records the generated column
+name and its string value.
 
 ## CLI
 
@@ -153,6 +168,7 @@ ai4ts-cli data export-tsfm --input history.csv --future future.csv \
   --n-pred-steps 12 --frequency 1h --covariates covariates.json --output tsfm-input
 ```
 
-`--covariates`, `--future`, and `--frequency` are optional according to
-the declaration and cadence rules above. On success the command prints the
-manifest as JSON. Validation failures produce a JSON error and a nonzero exit.
+`--sample-id` is optional for a single series without an entity column.
+`--covariates`, `--future`, and `--frequency` follow the declaration and
+cadence rules above. On success the command prints the manifest as JSON.
+Validation failures produce a JSON error and a nonzero exit.

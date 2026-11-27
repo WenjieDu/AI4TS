@@ -208,7 +208,7 @@ def test_export_raw_frames_and_manifest(frames, tmp_path):
     assert manifest["schema"] == "ai4ts-tsfm-frames-v1" and manifest["status"] == "success"
     assert manifest["covariates"] == dict(COVARIATES, weather=DEFAULT)
     assert manifest["covariates_sha256"] == state_sha256(manifest["covariates"])
-    assert manifest["n_pred_steps"] == 2 and pd.Timedelta(manifest["frequency"]) == pd.Timedelta("1h")
+    assert manifest["n_pred_steps"] == 2 and manifest["frequency"] == "1h"
     assert manifest["time_basis"] == "regular_timestamp" and manifest["timezone"] == "UTC"
     assert manifest["source_sha256"] == file_sha256(source) and manifest["future_source_sha256"] == file_sha256(ahead)
     assert manifest["files"] == {name: file_sha256(output / name) for name in ("context.csv", "future.csv")}
@@ -225,6 +225,135 @@ def test_export_raw_frames_and_manifest(frames, tmp_path):
     with pytest.raises(FileExistsError):
         export_tsfm_frames(source, output, future_csv=ahead, covariates=COVARIATES, **OPTIONS)
     assert manifest == json.loads((output / "manifest.json").read_text())
+
+
+@pytest.mark.parametrize(
+    ("alias", "offset", "expected_alias"),
+    [
+        ("MS", pd.offsets.MonthBegin(), "MS"),
+        ("ME", pd.offsets.MonthEnd(), "ME"),
+        ("QS", pd.offsets.QuarterBegin(startingMonth=1), "QS-JAN"),
+        ("QE", pd.offsets.QuarterEnd(startingMonth=12), "QE-DEC"),
+        ("YS", pd.offsets.YearBegin(), "YS-JAN"),
+        ("YE", pd.offsets.YearEnd(), "YE-DEC"),
+        ("W-MON", pd.offsets.Week(weekday=0), "W-MON"),
+        ("B", pd.offsets.BusinessDay(), "B"),
+    ],
+)
+@pytest.mark.parametrize("explicit", [False, True])
+def test_export_calendar_frequency_alias_and_future_grid(tmp_path, alias, offset, expected_alias, explicit):
+    from ai4ts.data_protocols import export_tsfm_frames
+
+    dates = pd.date_range("2024-01-01", periods=12, freq=offset, tz="UTC")
+    source, output = tmp_path / "history.csv", tmp_path / "output"
+    pd.DataFrame({"id": "a", "time": dates, "sales": 1}).to_csv(source, index=False)
+    options = dict(OPTIONS, feature_columns=["sales"], frequency=alias if explicit else None)
+    manifest = export_tsfm_frames(source, output, **options)
+    exported_alias = manifest["frequency"]
+    if alias == "QS" and not explicit:
+        assert exported_alias.startswith("QS-")
+        assert dates.equals(pd.date_range(dates[0], periods=len(dates), freq=exported_alias))
+    else:
+        assert exported_alias == expected_alias
+    exported = pd.read_csv(output / "future.csv")
+    assert pd.to_datetime(exported.time, utc=True).tolist() == [dates[-1] + k * offset for k in (1, 2)]
+
+
+def test_calendar_input_validates_each_entity_and_supplied_horizon():
+    from ai4ts.data_protocols import validate_future_covariates
+
+    month_start = pd.offsets.MonthBegin()
+    a = pd.date_range("2023-12-01", periods=4, freq=month_start)
+    b = pd.date_range("2024-01-01", periods=2, freq=month_start)
+    history = pd.DataFrame({"id": ["a"] * len(a) + ["b"] * len(b), "time": a.append(b), "sales": 1, "promo": 0})
+    future = pd.DataFrame(
+        {
+            "id": ["a", "a", "b", "b"],
+            "time": [last + k * month_start for last in (a[-1], b[-1]) for k in (1, 2)],
+            "promo": [1, np.nan, 0, 1],
+        },
+    )
+    options = dict(OPTIONS, feature_columns=["sales", "promo"], covariates={"promo": COVARIATES["promo"]})
+    result = validate_future_covariates(history, future, **options)
+    assert result.time.tolist() == pd.to_datetime(future.time, utc=True).tolist()
+    assert pd.isna(result.promo.iloc[1])
+    wrong = future.assign(time=future.time.mask(future.index == 0, future.time.iloc[0] + pd.Timedelta(days=1)))
+    with pytest.raises(ValueError, match="continue"):
+        validate_future_covariates(history, wrong, **options)
+    inconsistent = pd.concat([history, history.assign(id="c", time=history.time + pd.offsets.MonthEnd())])
+    inconsistent = inconsistent.drop_duplicates(["id", "time"])
+    with pytest.raises(ValueError, match="cadence"):
+        validate_future_covariates(inconsistent, future, **options)
+    off_grid = history.assign(time=history.time.mask(history.index == 0, pd.Timestamp("2023-11-30")))
+    with pytest.raises(ValueError, match="cadence"):
+        validate_future_covariates(off_grid, future, **dict(options, frequency="MS"))
+
+
+@pytest.mark.parametrize(("kind", "constant", "different"), [("numeric", "1.0", "2.0"), ("categorical", "001", "002")])
+def test_export_rejects_static_values_that_change_within_an_entity(tmp_path, kind, constant, different):
+    from ai4ts.data_protocols import export_tsfm_frames
+
+    source, output = tmp_path / "history.csv", tmp_path / "output"
+    history = pd.DataFrame(
+        {"id": "a", "time": pd.date_range("2024-01-01", periods=12, freq="h"), "sales": 1,
+         "s": [constant] * 11 + [different]},
+    )
+    history.to_csv(source, index=False)
+    options = dict(OPTIONS, feature_columns=["sales", "s"], covariates={
+        "s": {"role": "static", "kind": kind, "evidence": EVIDENCE},
+    })
+    with pytest.raises(ValueError, match=r"Static covariate 's'.*entity 'a'"):
+        export_tsfm_frames(source, output, **options)
+    assert not output.exists()
+    equivalent = "1e0" if kind == "numeric" else constant
+    a = history.assign(s=[constant] * 10 + [equivalent, None])
+    pd.concat([a, history.assign(id="b", s=different)]).to_csv(source, index=False)
+    export_tsfm_frames(source, output, **options)
+    context = pd.read_csv(output / "context.csv", keep_default_na=False, dtype=str)
+    assert context.loc[context.id == "a", "s"].tolist() == [constant] * 10 + [equivalent, ""]
+    assert context.loc[context.id == "b", "s"].tolist() == [different] * 12
+
+
+def test_export_single_series_with_no_identifier_and_supplied_known_covariates(tmp_path):
+    from ai4ts.data_protocols import export_tsfm_frames, validate_future_covariates
+
+    history = pd.DataFrame({"time": ["2024-01-01", "2024-02-01", "2024-03-01"], "sales": [1, 2, 3], "promo": 0})
+    future = pd.DataFrame({"time": ["2024-04-01", "2024-05-01"], "promo": [1, 0]})
+    opts = dict(
+        OPTIONS, sample_id_col=None, feature_columns=["sales", "promo"], covariates={"promo": COVARIATES["promo"]},
+    )
+    validated = validate_future_covariates(history, future, **opts)
+    source, ahead, output = (tmp_path / name for name in ("history.csv", "future.csv", "out"))
+    history.to_csv(source, index=False)
+    future.to_csv(ahead, index=False)
+    manifest = export_tsfm_frames(source, output, future_csv=ahead, **opts)
+    assert manifest["sample_id_col"] == "item_id"
+    assert {"generated_entity_id": {"column": "item_id", "value": "0"}} in manifest["consequences"]
+    assert manifest["future_source_sha256"] == file_sha256(ahead)
+    ctx = pd.read_csv(output / "context.csv", dtype=str)
+    aft = pd.read_csv(output / "future.csv", dtype=str)
+    assert ctx.item_id.tolist() == ["0"] * 3
+    assert aft.item_id.tolist() == validated.item_id.tolist() == ["0"] * 2
+    assert aft.promo.tolist() == ["1", "0"]
+    assert list(history.columns) == ["time", "sales", "promo"] and list(future.columns) == ["time", "promo"]
+
+
+def test_cli_without_sample_id_generates_an_entity_and_grid(tmp_path):
+    source, output = tmp_path / "history.csv", tmp_path / "out"
+    source.write_text("time,sales,item_id\n2024-01-01,1,9\n2024-01-02,2,10\n2024-01-03,3,11\n")
+    result = CliRunner().invoke(cli, [
+        "data", "export-tsfm", "--input", str(source), "--timestamp", "time", "--features", "sales,item_id",
+        "--targets", "sales", "--n-pred-steps", "2", "--output", str(output),
+    ])
+    assert result.exit_code == 0, result.output
+    manifest = json.loads(result.stdout)
+    assert manifest["sample_id_col"] == "item_id_"
+    assert {"generated_entity_id": {"column": "item_id_", "value": "0"}} in manifest["consequences"]
+    ctx = pd.read_csv(output / "context.csv", dtype=str)
+    aft = pd.read_csv(output / "future.csv", dtype=str)
+    assert ctx.item_id.tolist() == ["9", "10", "11"]
+    assert aft.item_id_.tolist() == ["0", "0"]
+    assert pd.to_datetime(aft.time).dt.day.tolist() == [4, 5]
 
 
 def test_export_categorical_future_and_generated_grid(frames, tmp_path):
