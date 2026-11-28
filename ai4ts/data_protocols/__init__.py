@@ -144,3 +144,6 @@ __all__ += ["preview_time_basis"]
 
 from .merge import create_merge_plan, validate_merge_plan, run_merge, inspect_merge_result
 __all__ += ["create_merge_plan", "validate_merge_plan", "run_merge", "inspect_merge_result"]
+
+from .covariates import export_tsfm_frames, validate_future_covariates
+__all__ += ["export_tsfm_frames", "validate_future_covariates"]

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 
@@ -13,7 +14,7 @@ import pandas as pd
 
 from .preprocessing import fit_scaler, state_sha256, transform_values, validate_scaler
 from .registry import WindowEntry, WindowRegistry, file_sha256
-from .semantics import prepare_feature_semantics, validate_semantic_binding
+from .semantics import prepare_feature_semantics, resolve_covariates, validate_covariate_binding, validate_semantic_binding
 
 
 def validate_task_state(state, task=None):
@@ -58,6 +59,12 @@ def validate_task_state(state, task=None):
         raise ValueError("Clustering/representation requires confirmed independent sample roles")
     if state["task"] == "representation" and not state["roles"].get("label_col") and "classes" in state:
         raise ValueError("Unlabelled representation cannot contain training classes")
+    if "covariates" in state or "covariates_sha256" in state:
+        if state["task"] != "forecasting":
+            raise ValueError("Covariate declarations require forecasting")
+        validate_covariate_binding(
+            state.get("covariates"), state.get("covariates_sha256"), features, state["target_features"]
+        )
     for key in ("training_sha256", "training_source_sha256"):
         value = state.get(key, "")
         if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
@@ -107,12 +114,15 @@ def prepare_task(
     target_features,
     feature_units=None,
     unit_state=None,
+    covariates=None,
 ):
     """Prepare a confirmed task, fitting state exclusively for training."""
     from .pipeline import _read_source, _extract_samples, _transform, _inject_artificial_missing
 
     if preprocessing not in (None, "standard-v1") or not 0 <= missing_rate < 1:
         raise ValueError("Invalid task preprocessing or missing rate")
+    if covariates is not None and task != "forecasting":
+        raise ValueError("Covariate declarations require forecasting")
     if task_state is not None:
         validate_task_state(task_state, task)
         if schema_mapping is None:
@@ -174,6 +184,14 @@ def prepare_task(
             or not set(target_features).issubset(features)
         ):
             raise ValueError("Forecasting requires a nonempty ordered feature subset")
+        resolved_covariates = resolve_covariates(covariates, features, target_features)
+        if task_state is not None:
+            saved_covariates = task_state.get("covariates")
+            if saved_covariates is None:
+                saved_covariates = resolve_covariates(None, features, target_features)
+            if covariates is not None and resolved_covariates != saved_covariates:
+                raise ValueError("Covariates differ from the saved training declaration")
+            resolved_covariates = saved_covariates
     training_rows = (split_info or {}).get("rows", {}).get("train")
     training = df if set_type == "train" else source.loc[source.index.isin(training_rows)] if training_rows else None
     if task_state is None:
@@ -199,7 +217,12 @@ def prepare_task(
         if task == "classification" or (task == "representation" and labels is not None):
             task_state["classes"] = sorted(set(labels.values()))
         elif task == "forecasting":
-            task_state.update(n_pred_steps=n_pred_steps, target_features=list(target_features))
+            task_state.update(
+                n_pred_steps=n_pred_steps,
+                target_features=list(target_features),
+                covariates=resolved_covariates,
+                covariates_sha256=state_sha256(resolved_covariates),
+            )
     validate_task_state(task_state, task)
     if roles != task_state["roles"] or window_size != task_state["window_size"]:
         raise ValueError("Task state feature/role/window mismatch")
@@ -273,6 +296,8 @@ def prepare_task(
                 future.append(target)
         original, targets = np.stack(history), np.stack(future)
         registry.target_features, registry.n_pred_steps = list(target_features), n_pred_steps
+        registry.covariates = copy.deepcopy(resolved_covariates)
+        registry.covariates_sha256 = state_sha256(resolved_covariates)
     registry.n_features, registry.task_type, registry.format_version = len(features), task, 2
     registry.source_sha256, registry.source_row_count = file_sha256(csv_path), len(source)
     registry.columns, registry.column_roles, registry.feature_columns = list(df.columns), roles, list(features)
