@@ -11,6 +11,14 @@ ai4ts-cli --help
 To use the CLI from a source checkout, run `python -m pip install .` from the
 repository root.
 
+To run the full test suite from the repository root, install the analysis extra
+for statistical reference tests and BenchPOTS for data preparation tests.
+
+```sh
+python -m pip install '.[analysis]' pytest 'benchpots==1'
+python -m pytest tests -q
+```
+
 Use `data` for source inspection and preparation, `analyze` for local
 statistics and forecast baselines, and `service` for TimeSeries.AI requests.
 Each command accepts `--help`.
