@@ -445,14 +445,15 @@ def test_task_binding_defaults_reuse_legacy_and_conflicts(tmp_path):
     assert state["covariates"] == {"price": DEFAULT, **declaration}
     assert state["covariates_sha256"] == state_sha256(state["covariates"])
     assert registry.covariates == state["covariates"]
-    np.testing.assert_array_equal(declared["X"], default["X"])
+    np.testing.assert_array_equal(declared["X"][:, :, :2], default["X"][:, :, :2])
+    np.testing.assert_array_equal(declared["X"][0, :, 2], [0, 1, 0])
     np.testing.assert_array_equal(declared["X_pred"], default["X_pred"])
-    assert registry.feature_columns == ["price", "y", "promo"]
+    assert registry.feature_columns == ["y", "price", "promo@lead"]
     assert registry.task_state_sha256 == state_sha256(state)
     assert WindowRegistry.from_dict(registry.to_dict()).fingerprint() == registry.fingerprint()
-    full = prepare_for_pypots(source, task="forecasting", set_type="full", task_state=state, missing_rate=0)
-    assert full["registry"].covariates == state["covariates"]
-    full["registry"].validate_task_binding(source, full["registry"].prediction_binding(), state)
+    held = prepare_for_pypots(source, task="forecasting", set_type="test", task_state=state, missing_rate=0)
+    assert held["registry"].covariates == state["covariates"]
+    held["registry"].validate_task_binding(source, held["registry"].prediction_binding(), state)
     with pytest.raises(ValueError, match="saved training"):
         prepare_for_pypots(source, task="forecasting", set_type="full", task_state=state, covariates={})
     with pytest.raises(ValueError, match="forecasting"):
@@ -472,12 +473,17 @@ def test_task_binding_defaults_reuse_legacy_and_conflicts(tmp_path):
         altered.validate_task_binding(source, altered.prediction_binding(), state)
 
     covariate_fields = {"covariates", "covariates_sha256"}
-    legacy_state = {k: v for k, v in default["task_state"].items() if k not in covariate_fields}
+    new_state_fields = covariate_fields | {"input_features", "categorical_encoding"}
+    legacy_state = {k: v for k, v in default["task_state"].items() if k not in new_state_fields}
     legacy_registry = {k: v for k, v in default["registry"].to_dict().items() if k not in covariate_fields}
+    legacy_registry["feature_columns"] = ["price", "y", "promo"]
     legacy_registry["task_state_sha256"] = state_sha256(legacy_state)
     old = WindowRegistry.from_dict(legacy_registry)
     assert old.to_dict() == legacy_registry
     old.validate_task_binding(source, old.prediction_binding(), legacy_state)
     live = prepare_for_pypots(source, task="forecasting", set_type="full", task_state=legacy_state)
     assert live["registry"].covariates == default["registry"].covariates
+    assert default["registry"].feature_columns == ["y", "price", "promo"]
+    assert live["registry"].feature_columns == legacy_registry["feature_columns"]
+    np.testing.assert_array_equal(live["X"][0], default["X"][0][:, [1, 0, 2]])
     assert live["task_state"] == legacy_state

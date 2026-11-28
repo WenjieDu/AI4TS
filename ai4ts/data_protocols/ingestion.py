@@ -187,7 +187,8 @@ def registry_mapping_sha256(registry):
 
 def _preview(source, roles, task, parameters, split):
     length, horizon = parameters["window_size"], parameters.get("horizon") or 0
-    features, targets = len(roles["feature_cols"]), len(parameters.get("targets") or [])
+    features = len(parameters.get("input_features", roles["feature_cols"]))
+    targets = len(parameters.get("targets") or [])
     result = {}
     for role in ("train", "val", "test", "full"):
         if role == "full" and task not in ("imputation", "forecasting"):
@@ -264,6 +265,7 @@ def create_ingestion_plan(
     reshape_result=None,
     time_selection=None,
     merge_result=None,
+    covariates=None,
 ):
     """Create a content-bound CSV plan without fitting, masking or preparing tensors.
 
@@ -303,6 +305,8 @@ def create_ingestion_plan(
         Opt-in source-bound time representation; only this path creates version 2.
     merge_result : str, dict or None
         Unique verified merge parent; requires a new explicit evaluation intent.
+    covariates : dict or None
+        Forecast declarations used to bind and budget model input columns.
 
     Returns
     -------
@@ -324,6 +328,8 @@ def create_ingestion_plan(
         missing_rate=missing_rate,
         confirmed_by=confirmed_by,
     )
+    if covariates is not None:
+        request["covariates"] = covariates
     if time_selection is not None:
         from .time_basis import create_time_selection_plan
 
@@ -363,6 +369,8 @@ def create_ingestion_plan(
                 split_policy = derived["split"]["policy"]
         if task not in TASKS:
             raise ValueError("Unsupported task")
+        if covariates is not None and task != "forecasting":
+            raise ValueError("Covariate declarations require forecasting")
         if type(seed) is not int or type(allow_irregular) is not bool or not 0 <= missing_rate < 1:
             raise ValueError("Invalid seed, time interpretation or missing rate")
         if roles is None:
@@ -382,7 +390,12 @@ def create_ingestion_plan(
         if plan["unresolved"]:
             plan["sha256"] = content_sha256(plan)
             return plan
-        source, profile = _read_source(csv_path, task, roles, allow_irregular)
+        categorical = []
+        if covariates is not None:
+            from .forecast_inputs import categorical_columns
+
+            categorical = categorical_columns(covariates)
+        source, profile = _read_source(csv_path, task, roles, allow_irregular, categorical)
         roles = {
             k: getattr(profile.schema_mapping, k)
             for k in ("sample_id_col", "timestamp_col", "label_col", "feature_cols")
@@ -406,11 +419,14 @@ def create_ingestion_plan(
         split = (
             derived["split"]
             if derived and derived["split"]
-            else split_source_rows(csv_path, roles, seed, allow_irregular, policy=split_policy)
+            else split_source_rows(
+                csv_path, roles, seed, allow_irregular, policy=split_policy, categorical_columns=categorical
+            )
         )
         validate_source_split(source, roles, split, task, split["rows"]["train"], strict=True)
         training = source.loc[source.index.isin(split["rows"]["train"])]
-        if training[roles["feature_cols"]].isna().all().any():
+        numeric = [column for column in roles["feature_cols"] if column not in categorical]
+        if training[numeric].isna().all().any():
             raise ValueError("Training features must contain observed values")
         lengths = [len(g) for _, g in _groups(training, roles)]
         length = (
@@ -443,6 +459,15 @@ def create_ingestion_plan(
             missing_rate=missing_rate,
             allow_irregular=allow_irregular,
         )
+        if covariates is not None:
+            from .forecast_inputs import input_layout
+            from .semantics import resolve_covariates
+
+            resolved = resolve_covariates(covariates, roles["feature_cols"], targets)
+            layout = input_layout(roles["feature_cols"], targets, resolved)
+            if length < steps and any(name != source_col and target is None for name, source_col, target in layout):
+                raise ValueError("A lead window must be at least as long as the forecast horizon")
+            parameters["input_features"] = [name for name, _, _ in layout]
         plan.update(
             roles=roles,
             parameters=parameters,
@@ -488,8 +513,10 @@ def verify_prepared_plan(plan, role, result):
     expected = plan["preview"][role]
     registry = result["registry"]
     target_shape = list(result["X_pred"].shape) if "X_pred" in result else None
+    model_columns = plan["parameters"].get("input_features")
     if (
         list(result["X"].shape) != expected["X_shape"]
+        or (model_columns is not None and registry.feature_columns != model_columns)
         or target_shape != expected["X_pred_shape"]
         or sum(e.pad_length for e in registry.entries) != expected["padding_steps"]
         or registry_mapping_sha256(registry) != expected["mapping_sha256"]

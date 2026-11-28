@@ -211,12 +211,8 @@ class WindowRegistry:
         if reg.preprocessing not in (None, "standard-v1") or bool(reg.preprocessing) != bool(reg.scaler_sha256):
             raise ValueError("Invalid registry preprocessing binding")
         if "feature_semantics" in d or "feature_semantics_sha256" in d:
-            from .semantics import validate_semantic_binding
-
             if d.get("feature_semantics") is None or not d.get("feature_semantics_sha256"):
                 raise ValueError("Incomplete registry feature semantics")
-            validate_semantic_binding(d.get("feature_semantics"), d.get("feature_semantics_sha256"),
-                                      reg.feature_columns, reg.source_sha256)
         if ("covariates" in d or "covariates_sha256" in d) and d.get("covariates") is None:
             raise ValueError("Incomplete registry covariate binding")
         for entry_dict in d.get("entries", []):
@@ -258,21 +254,26 @@ class WindowRegistry:
         """Check optional units and covariates while preserving legacy registry identities."""
         from .semantics import validate_covariate_binding, validate_semantic_binding
 
+        features = self.feature_columns
+        if self.task_type == "forecasting":
+            features = self.column_roles.get("feature_cols", features)
         validate_semantic_binding(self.feature_semantics, self.feature_semantics_sha256 or None,
-                                  self.feature_columns, self.source_sha256)
+                                  features, self.source_sha256)
         if self.covariates is not None or self.covariates_sha256:
             if self.task_type != "forecasting":
                 raise ValueError("Covariate declarations require forecasting")
             validate_covariate_binding(
-                self.covariates, self.covariates_sha256, self.feature_columns, self.target_features
+                self.covariates, self.covariates_sha256, features, self.target_features
             )
 
     def validate_task_binding(self, source_csv, binding, task_state) -> None:
         """Check split-aware source, training state, and task-specific positions."""
-        from .task_data import validate_task_state
+        from .forecast_inputs import categorical_columns
         from .preprocessing import state_sha256
+        from .task_data import validate_task_state
 
         validate_task_state(task_state, self.task_type)
+        source_features = task_state["roles"]["feature_cols"]
         if (
             self.format_version != 2
             or file_sha256(source_csv) != self.source_sha256
@@ -281,7 +282,7 @@ class WindowRegistry:
             or task_state["roles"] != self.column_roles
             or task_state["window_size"] != self.window_size
             or self.n_features != len(self.feature_columns)
-            or self.feature_columns != task_state["roles"]["feature_cols"]
+            or self.feature_columns != task_state.get("input_features", source_features)
         ):
             raise ValueError("Task prediction/source/state/registry binding mismatch")
         if self.preprocessing and state_sha256(task_state["scaler_state"]) != self.scaler_sha256:
@@ -291,7 +292,7 @@ class WindowRegistry:
 
             saved_covariates = task_state.get("covariates")
             if saved_covariates is None:
-                saved_covariates = resolve_covariates(None, self.feature_columns, self.target_features)
+                saved_covariates = resolve_covariates(None, source_features, self.target_features)
             if self.covariates != saved_covariates:
                 raise ValueError("Task covariate/registry binding mismatch")
         if task_state.get("feature_semantics") is not None:
@@ -299,12 +300,13 @@ class WindowRegistry:
 
             if self.feature_semantics is None:
                 raise ValueError("Registry is missing declared training units")
-            prepare_feature_semantics(self.feature_semantics["units"], self.feature_columns,
+            prepare_feature_semantics(self.feature_semantics["units"], source_features,
                                       self.source_sha256, task_state["feature_semantics"])
         selected = set(self.split_info.get("rows", {}).get(self.split_info.get("role"), range(self.source_row_count)))
         from .pipeline import _read_source
 
-        source, _ = _read_source(source_csv, self.task_type, self.column_roles, True)
+        categorical = categorical_columns(task_state.get("covariates")) if "input_features" in task_state else []
+        source, _ = _read_source(source_csv, self.task_type, self.column_roles, True, categorical)
         id_col = self.column_roles["sample_id_col"]
         original_groups = (
             {sid: list(g.index) for sid, g in source.groupby(id_col, sort=True)} if id_col else {0: list(source.index)}

@@ -54,6 +54,8 @@ def prepare_for_pypots(
     unit_state: dict | None = None,
     ingestion_plan: dict | None = None,
     covariates: dict | None = None,
+    future_csv: str | Path | None = None,
+    frequency: str | None = None,
 ) -> dict[str, Any]:
     """Convert a CSV file to PyPOTS-ready arrays with a window registry.
 
@@ -104,6 +106,11 @@ def prepare_for_pypots(
     covariates : dict or None
         Forecasting-only mapping of selected non-target columns to role, kind,
         and evidence. Omitted columns default to past numeric inputs.
+    future_csv : str or Path or None
+        Known-covariate horizon for full forecasting, validated against the
+        final selected history. Required when the model has lead columns.
+    frequency : str or None
+        Explicit pandas offset for validating a supplied future CSV.
 
     Returns
     -------
@@ -116,6 +123,9 @@ def prepare_for_pypots(
     """
     if covariates is not None and task != "forecasting":
         raise ValueError("Covariate declarations require forecasting")
+    if (future_csv is not None or frequency is not None) and (task != "forecasting" or set_type != "full"):
+        raise ValueError("A future covariate CSV is only supported for full forecasting")
+    planned_input_width = None
     if ingestion_plan is not None:
         from .ingestion import validate_ingestion_plan, verify_prepared_plan
 
@@ -133,6 +143,12 @@ def prepare_for_pypots(
             raise ValueError("Plan/horizon override conflict")
         if target_features is not None and target_features != params["targets"]:
             raise ValueError("Plan/target override conflict")
+        planned_covariates = ingestion_plan["request"].get("covariates")
+        if planned_covariates is not None:
+            if covariates is not None and covariates != planned_covariates:
+                raise ValueError("Plan/covariate override conflict")
+            covariates = planned_covariates
+        planned_input_width = ingestion_plan["preview"][set_type]["X_shape"][-1]
         expected_rows = ingestion_plan["split"]["rows"].get(set_type)
         if row_indices is not None and row_indices != expected_rows:
             raise ValueError("Plan/source row override conflict")
@@ -168,6 +184,9 @@ def prepare_for_pypots(
             feature_units,
             unit_state,
             covariates,
+            future_csv=future_csv,
+            frequency=frequency,
+            planned_input_width=planned_input_width,
         )
         if ingestion_plan is not None:
             verify_prepared_plan(ingestion_plan, set_type, result)
@@ -373,9 +392,13 @@ def split_by_sample_id(
     return list(train_ids), list(val_ids), list(test_ids)
 
 
-def _read_source(csv_path, task, schema_mapping, allow_irregular):
+def _read_source(csv_path, task, schema_mapping, allow_irregular, categorical_columns=()):
     """Read and validate source roles and ordering without windowing."""
-    profile = analyze_dataset(csv_path, task_type=task, schema_mapping=schema_mapping)
+    from .profile import _parse_feature_values
+
+    profile = analyze_dataset(
+        csv_path, task_type=task, schema_mapping=schema_mapping, categorical_columns=tuple(categorical_columns)
+    )
 
     schema = profile.schema_mapping
     sample_id_col = schema.sample_id_col
@@ -383,10 +406,8 @@ def _read_source(csv_path, task, schema_mapping, allow_irregular):
     feature_cols = schema.feature_cols
     roles = [c for c in (sample_id_col, schema.timestamp_col, label_col) if c]
     df = pd.read_csv(csv_path)
-    if roles:
-        df[roles] = pd.read_csv(csv_path, usecols=roles, dtype=str, keep_default_na=False)[roles]
-    df[feature_cols] = df[feature_cols].apply(pd.to_numeric, errors="raise")
-    if np.isinf(df[feature_cols].to_numpy(dtype=float)).any():
+    numeric = _parse_feature_values(df, csv_path, roles, feature_cols, categorical_columns)
+    if np.isinf(df[numeric].to_numpy(dtype=float)).any():
         raise ValueError("Features contain infinite values")
     if sample_id_col and (df[sample_id_col].isna().any() or df[sample_id_col].eq("").any()):
         raise ValueError("Sample identifiers cannot be missing")
@@ -413,6 +434,8 @@ def split_source_rows(
     seed: int = 2024,
     allow_irregular: bool = False,
     policy: str | None = None,
+    *,
+    categorical_columns: tuple[str, ...] = (),
 ) -> dict:
     """Assign original records to nonempty train/val/test splits before windowing.
 
@@ -433,13 +456,15 @@ def split_source_rows(
     policy : str or None
         Explicit ``entity_chronological`` partitions each entity in time.
         None preserves the legacy entity/single-series policy.
+    categorical_columns : tuple of str
+        Declared categorical features to read as labels during split validation.
 
     Returns
     -------
     dict
         Policy, seed, and original row positions for each split.
     """
-    df, profile = _read_source(csv_path, "imputation", schema_mapping, allow_irregular)
+    df, profile = _read_source(csv_path, "imputation", schema_mapping, allow_irregular, categorical_columns)
     id_col = profile.schema_mapping.sample_id_col
     groups = list(df.groupby(id_col, sort=True)) if id_col else [(0, df)]
     if policy not in (None, "entity", "chronological", "row_order", "entity_chronological"):

@@ -92,12 +92,53 @@ For forecasting preparation, pass the same optional `covariates` keyword to
 `prepare_for_pypots(..., task="forecasting", covariates=...)`. The resolved
 mapping and its SHA-256 are recorded as `covariates` and `covariates_sha256` in
 the training task state and window registry. Evaluation and full preparation
-reuse the training declaration and reject a conflicting override. Previously
-saved forecasting states and registries can still be read, with omitted
-covariates treated as past numeric inputs. This metadata release uses the
-existing numeric array preparation. String categories are supported on the
-TSFM export route. Lead features and categorical encoding belong to the later
-array routing change.
+reuse the training declaration and reject a conflicting override.
+
+## PyPOTS forecasting inputs
+
+For newly prepared training state, `X` begins with `target_features` in the
+requested order. Covariates follow in source feature order. The registry
+records this model order in `feature_columns` and preserves the source
+order in `column_roles["feature_cols"]`. Previously saved forecasting state
+continues to use its original model input layout. Refit to adopt this routing
+for an existing model.
+
+When preparing from a Python ingestion plan, supply `covariates` to
+`create_ingestion_plan` to preview and bind the generated column order and
+tensor width before preparation.
+
+- Past numeric features retain their historical values. A known numeric
+  feature becomes `<col>@lead`. At input position `i` it reads position
+  `i + n_pred_steps`. Each window needs at least `n_pred_steps` history
+  positions to carry the entire known horizon. Training, validation, and
+  test use contiguous rows from their own split.
+- Each categorical covariate becomes one encoding column per target,
+  including the single-target case. Names are `<col>@te:<target>` in
+  `target_features` order. Categorical covariates use context values
+  for encoding, including when their declaration has role `known`.
+- A static covariate must agree across nonmissing observations within
+  an entity. Each window broadcasts the value available at its origin.
+  If the value has yet to be observed, a numeric static input stays
+  missing and a categorical static input uses the missing category.
+
+Each encoding column uses only observed training targets for its
+corresponding target. With smoothing equal to one, the encoded value is
+`(entity_mean + category_sum) / (1 + category_count)`. Missing labels have
+their own category. An unseen label uses the entity's training mean. A
+previously unseen entity, or an entity without observations for this target,
+uses that target's global training mean. Save `task_state` to reuse these
+lookups in validation, test, and full preparation. With `standard-v1`,
+numeric leads use their source feature's training scaler and each encoding
+uses its corresponding target's training scaler.
+
+For known numeric leads, supply `future_csv` to
+`prepare_for_pypots(..., task="forecasting", set_type="full", task_state=...)`.
+The table follows the same horizon validation described below. An explicit
+`frequency` can be supplied for that validation. The last historical
+window uses the supplied known values for its horizon. Earlier windows use
+the known values in history. The external CSV fingerprint and horizon
+timestamps are bound into the registry. The final `X_pred` stays missing and
+unscored. `export_forecasts` emits the target names in `target_features` order.
 
 ## History and future validation
 
